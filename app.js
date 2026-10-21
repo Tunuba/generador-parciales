@@ -244,6 +244,11 @@ function pintar() {
     v.innerHTML = htmlHojas(estado.m, res, estado.logo, res ? estado.mres : estado.mx);
   }
   escalar();
+  // al imprimir, la hoja del tamano que eligio el maestro (oficio no es el tamano por defecto)
+  let tam = $('tam-pagina');
+  if (!tam) { tam = document.createElement('style'); tam.id = 'tam-pagina'; document.head.appendChild(tam); }
+  const alto = estado.vista === 'temario' ? 11 : (estado.m.datos.hoja === 'carta' ? 11 : 12.5);
+  tam.textContent = `@page { size: 8.5in ${alto}in; margin: 0; }`;
   $('bajar-word').textContent = estado.vista === 'resuelto' ? 'Descargar Word del resuelto' : 'Descargar Word del examen';
   $('bajar-word').hidden = estado.vista === 'temario';
 }

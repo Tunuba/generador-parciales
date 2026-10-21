@@ -398,7 +398,9 @@ function letrasBalanceadas(n, rnd) {
   base.length = n;
   for (let k = 0; k < 2000; k++) {
     barajar(base, rnd);
-    if (!tresSeguidas(base) && base.join('') !== [...base].sort().join('')) break;
+    // ni tres iguales seguidas ni tres letras en orden (abc, bcd o al reves), que se nota
+    const t = base.join('');
+    if (!tresSeguidas(base) && !/abc|bcd|cba|dcb/.test(t)) break;
   }
   return base;
 }
