@@ -549,8 +549,11 @@ function serieBloques(et, x, res, aire, inicio) {
   } else if (x.tipo === 'vf') {
     x.afirmaciones.forEach((a, i) => {
       if (i) b.push(entre(i, x.afirmaciones.length));
-      b.push(P([rojo(a.es_verdadera ? 'V' : 'F', res, '_____'), R(`  ${i + 1}. ${a.texto}`)]));
-      b.push(P([R('Corrección: '), res ? R(a.correccion || '(es verdadera)', { r: 1 }) : R('_'.repeat(68))]));
+      // la V o la F va entre parentesis a la derecha, todos en la misma columna (una raya suelta a la izquierda parecia un error)
+      b.push(T([6.8, 0.7], 'ninguno', [{ celdas: [
+        [P([R(`${i + 1}. ${a.texto}`)], { sangria: 0.25 }),
+          P([R('Corrección: '), res ? R(a.correccion || '(es verdadera)', { r: 1 }) : R('_'.repeat(56))])],
+        [P([R('( '), rojo(a.es_verdadera ? 'V' : 'F', res, '___'), R(' )')], { centro: 1 })]] }]));
     });
   } else if (x.tipo === 'abiertas') {
     const n = x.preguntas.length;
