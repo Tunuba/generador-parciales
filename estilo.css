@@ -120,9 +120,11 @@ button:hover, .boton:hover { border-color: var(--azul-2); }
 @media print {
   @page { margin: 0; }
   body { background: #fff; }
-  body * { visibility: hidden; }
-  .vista, .vista * { visibility: visible; }
-  .vista { position: absolute; left: 0; top: 0; padding: 0; background: none; }
-  .hoja { box-shadow: none; margin: 0; break-after: page; zoom: 1; }
-  .vista img.temario { width: 100%; box-shadow: none; }
+  /* solo se imprime la vista, lo demas no ocupa lugar (si no, salen hojas en blanco) */
+  body > *:not(main), main > *:not(#resultado), #resultado > *:not(#vista) { display: none !important; }
+  main, #resultado { margin: 0; padding: 0; border: 0; max-width: none; background: none; }
+  .vista { padding: 0; background: none; border-radius: 0; overflow: visible; }
+  .hoja { box-shadow: none; margin: 0; break-after: page; zoom: 1 !important; }
+  .hoja:last-child { break-after: auto; }
+  .vista img.temario { width: 8.5in; height: 12in; box-shadow: none; }
 }
