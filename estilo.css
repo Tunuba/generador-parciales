@@ -41,6 +41,7 @@ body { margin: 0; background: var(--fondo); color: var(--texto); font: 16px/1.5 
 .rejilla { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px 14px; }
 .rejilla label { display: flex; flex-direction: column; gap: 4px; font-size: 14px; color: var(--suave); min-width: 0; }
 .rejilla .doble { grid-column: span 2; }
+[hidden] { display: none !important; }  /* si no, el display:flex de las etiquetas les gana */
 .rejilla small { color: var(--suave); font-size: 12px; }
 input, select, textarea {
   font: inherit; color: var(--texto); background: var(--tarjeta); border: 1px solid var(--borde);

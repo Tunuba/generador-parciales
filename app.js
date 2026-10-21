@@ -3,7 +3,7 @@
 
 const $ = id => document.getElementById(id);
 const CLAVE = 'generador-parciales.v2';
-const CAMPOS = ['colegio', 'colegio-otro', 'materia', 'materia-otra', 'grado', 'tipo-examen', 'bloque', 'profesor', 'hoja'];
+const CAMPOS = ['colegio', 'materia', 'materia-otra', 'grado', 'tipo-examen', 'bloque', 'profesor', 'hoja'];
 const CICLO = '2027';
 const TOTALES = [10, 15, 20, 25, 30, 35, 40, 50, 60, 100];
 // Lo que se marca al abrir, segun cuantas hojas lleva
@@ -15,7 +15,7 @@ const PESO = { seleccion: 0.9, abiertas: 1.5, vf: 0.9, completar: 1, parear: 1, 
 const TOPE = { ordenar: 5, dibujo: 6 };
 const LOGO_SABER = 'logo-saber.jpg';
 
-const estado = { logo: null, logoPropio: null, parcial: null, m: null, mres: null, vista: 'examen', ia: {} };
+const estado = { logo: null, parcial: null, m: null, mres: null, vista: 'examen', ia: {} };
 
 function leerGuardado() {
   try { return JSON.parse(localStorage.getItem(CLAVE)) || {}; } catch (e) { return {}; }
@@ -25,16 +25,14 @@ function guardar() {
   for (const c of CAMPOS) g.campos[c] = $(c).value;
   for (const t of ORDEN) g.series[t] = { marcada: $('s-' + t).checked, puntos: puntosDe(t) };
   g.texto = $('texto').value.length < 200000 ? $('texto').value : '';
-  if (estado.logoPropio) g.logoPropio = estado.logoPropio.url;
   try { localStorage.setItem(CLAVE, JSON.stringify(g)); } catch (e) { /* sin espacio o en privado, se sigue igual */ }
 }
 
 const hojas = () => +$('hojas').textContent;
 const total = () => +$('total').textContent;
 const puntosDe = t => +$('p-' + t).textContent;
-const otroColegio = () => $('colegio').value === 'otro';
 const datos = () => ({
-  colegio: otroColegio() ? limpio($('colegio-otro').value) : $('colegio').value,
+  colegio: $('colegio').value,
   materia: $('materia').value === 'otra' ? limpio($('materia-otra').value) : $('materia').value,
   grado: $('grado').value,
   examen: `${$('tipo-examen').value} ${$('bloque').value}`,
@@ -63,6 +61,8 @@ function iniciar() {
 
   const campos = g.campos || {};
   for (const c of CAMPOS) if (campos[c]) $(c).value = campos[c];
+  // un guardado viejo con otro colegio deja el selector vacio, vuelve a El Saber No.1
+  if (!$('colegio').value) $('colegio').selectedIndex = 0;
   $('hojas').textContent = g.hojas || 1;
   $('total').textContent = g.total || 15;
   if (g.series) for (const t of ORDEN) {
@@ -70,7 +70,6 @@ function iniciar() {
     $('p-' + t).textContent = g.series[t].puntos || valores(t)[0];
   } else marcarIniciales();
   if (g.texto) $('texto').value = g.texto;
-  if (g.logoPropio) cargarLogo(g.logoPropio).then(l => { estado.logoPropio = l; ponerLogo(); });
   ponerLogo();
 
   document.addEventListener('input', e => { if (e.target.closest('.paso') && e.target.id !== 'abrir') { revisar(); guardar(); } });
@@ -84,7 +83,6 @@ function iniciar() {
       marcarIniciales();
     }
     if (e.target.type === 'checkbox' && e.target.id.startsWith('s-')) repartir();
-    if (e.target.id === 'colegio') ponerLogo();
     revisar(); guardar();
   });
   document.addEventListener('click', e => {
@@ -94,13 +92,6 @@ function iniciar() {
     revisar(); guardar();
   });
   $('repartir').addEventListener('click', () => { repartir(); revisar(); guardar(); });
-  $('logo').addEventListener('change', async e => {
-    const f = e.target.files[0];
-    if (!f) return;
-    const url = await new Promise(r => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(f); });
-    estado.logoPropio = await cargarLogo(url);
-    ponerLogo(); guardar();
-  });
   $('archivos').addEventListener('change', subirArchivos);
   $('ejemplo').addEventListener('click', ponerEjemplo);
   $('borrar-texto').addEventListener('click', () => { $('texto').value = ''; revisar(); guardar(); });
@@ -169,16 +160,9 @@ async function cargarLogo(url) {
   return { url, datos, ancho: img.naturalWidth, alto: img.naturalHeight };
 }
 
-// El Saber lleva su logo; otro colegio lleva el que suban, o ninguno
+// Los dos colegios El Saber llevan el mismo logo
 async function ponerLogo() {
-  $('caja-colegio-otro').hidden = $('caja-logo').hidden = !otroColegio();
-  if (otroColegio()) {
-    estado.logo = estado.logoPropio;
-    $('logo-estado').textContent = estado.logoPropio ? 'Logo cargado' : 'Opcional';
-  } else {
-    if (!estado.logoSaber) estado.logoSaber = await cargarLogo(LOGO_SABER);
-    estado.logo = estado.logoSaber;
-  }
+  if (!estado.logo) estado.logo = await cargarLogo(LOGO_SABER);
 }
 
 // Revisa la eleccion de series cada vez que algo cambia
@@ -255,7 +239,6 @@ async function crear() {
   $('mensajes').innerHTML = '';
   const d = datos(), el = eleccion(), texto = $('texto').value.trim();
   const malos = revisar();
-  if (!d.colegio) malos.unshift('Escriba el nombre del colegio.');
   if (!d.materia) malos.unshift('Escriba cuál es la materia.');
   if (texto.length < 200) malos.unshift('Falta el contenido de las clases (paso 2).');
   if (malos.length) { aviso(malos.join('\n'), true); return; }
