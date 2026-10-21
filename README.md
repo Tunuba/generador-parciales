@@ -8,7 +8,8 @@ Se usa en https://tunuba.github.io/generador-parciales/
 
 1. Datos del examen. Todo con selectores, El Saber No.1 o No.2 con su logo, la materia, el grado, el parcial o examen final y el bloque. El parcial va en una hoja y el examen final en dos.
 2. Contenido de las clases. Se pega el texto o se suben archivos .txt, .docx, .pptx o .pdf con texto.
-3. Series. Se marcan las que van y los puntos se reparten solos, con menos y más para moverlos. Van al menos dos series por hoja. Las preguntas salen de la forma del texto, por eso conviene escribir los conceptos en lista, uno por renglón, como `Evaporación. El calor del Sol convierte el agua en vapor.`, y los pasos numerados.
+3. Series. Se tocan las que van o las que se quitan, y todo se acomoda solo (app.js, `acomodar`). Las series, los puntos y las hojas se mueven para que siempre cuadre, y una línea dice qué se movió y por qué. Reglas que respeta, al menos dos series por hoja, Completar y Parear no van juntas, la suma da el punteo, y cada serie sale de verdad con el texto pegado (se prueba armando el examen, y se prefiere la mezcla donde ninguna respuesta se ve escrita en otra serie). Si el examen no cabe en las hojas, al crear se prueba otra mezcla y después una hoja más.
+   Las preguntas salen de la forma del texto. Sirven las listas `Evaporación. El calor del Sol convierte el agua en vapor.`, los pasos numerados y también los párrafos corridos, de donde se sacan definiciones (`El lenguaje es la capacidad...`, `un emisor, que es quien transmite el mensaje`) y grupos (`elementos, como el mensaje, el canal y el código`). Ordenar pasos solo sale si el texto trae pasos.
 4. Resultado. Examen, resuelto y temario. Se baja el Word, se imprime o se guarda en PDF.
 
 ## Reglas que cuida

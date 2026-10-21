@@ -1,8 +1,10 @@
 // Modo basico, sin IA. Arma las series al instante leyendo la forma del texto.
 //   - Conceptos, de las listas del tipo "Termino. Definicion" o "Termino, definicion",
 //     de frases como "se le llama X" y de los titulos de diapositiva con su texto.
+//     Tambien de parrafos corridos, "El lenguaje es la capacidad..." y "un emisor, que es quien...".
 //   - Pasos, de las listas numeradas y de los parrafos de experimentos o procedimientos.
-//   - Grupos, de los titulos con su lista debajo (para clasificar).
+//   - Grupos, de los titulos con su lista debajo y de frases como "elementos, como el mensaje,
+//     el canal y el codigo" (para clasificar).
 //   - Oraciones, de todos los parrafos (para completar, verdadero o falso y seleccion).
 // Cada concepto es respuesta de una sola serie, asi una pregunta no contesta a otra.
 
@@ -108,6 +110,7 @@ function analizar(texto) {
     const m = f.match(/(?:se le llama|se llama|se conoce como|se denomina|se les llama)\s+([^.,;]+?)(?:\s+o\s+[^.,;]+)?[.,;]/i);
     if (m && palabras(m[1]).length <= 4) agregar({ termino: mayus(limpio(m[1])), definicion: punto(f.replace(m[0], '').replace(/^A (ese|esa|este|esta)\s+/i, '')) }, 'frase', i);
   })));
+  secciones.forEach((s, i) => s.parrafos.forEach(p => frases(p).forEach(f => definicionesDeFrase(f).forEach(c => agregar(c, 'prosa', i)))));
   secciones.forEach((s, i) => {
     const w = palabras(s.titulo);
     if (!s.titulo || w.length > 4 || /^(en|de|del|para|c[oó]mo|por|con|qu[eé]|importancia|experimento)\b/i.test(s.titulo)) return;
@@ -131,13 +134,78 @@ function analizar(texto) {
   const cuenta = {};
   for (const w of normal(texto).match(/[a-záéíóúñü]{5,}/g) || []) if (!VACIAS.has(w)) cuenta[w] = (cuenta[w] || 0) + 1;
   const tema = (secciones.find(s => s.titulo) || {}).titulo || '';
-  return { secciones, glosario, oraciones: utiles, cuenta, tema };
+  // grupos escritos dentro de un parrafo, "elementos, como el mensaje, el canal y el codigo"
+  const enumerados = [], yaGrupo = new Set();
+  secciones.forEach(s => s.parrafos.forEach(p => frases(p).forEach(f => enumeraciones(f).forEach(g => {
+    if (yaGrupo.has(normal(g.nombre))) return;
+    yaGrupo.add(normal(g.nombre));
+    enumerados.push(g);
+  }))));
+  return { secciones, glosario, oraciones: utiles, cuenta, tema, enumerados };
+}
+
+// un grupo con estos nombres son partes de algo que se puede dibujar
+const PARTES = /^(partes|elementos|etapas|componentes|fases|órganos|organos|piezas|capas)\b/i;
+
+// el texto se lee una vez aunque se armen muchos examenes con el (el plan automatico prueba varios)
+let leido = null;
+function analizarUnaVez(texto) {
+  if (!leido || leido.texto !== texto) leido = { texto, A: analizar(texto) };
+  return leido.A;
+}
+
+// Un termino de una a tres palabras que no sea una frase cualquiera
+function terminoSirve(t) {
+  const w = palabras(t);
+  if (!w.length || w.length > 3 || /[,;:()]/.test(t) || w.some(x => /^(y|e|o|u|que|se|también|tambien|más|mas|muy|no)$/i.test(x) && x !== 'no')) return false;
+  if (VACIAS.has(normal(w[0])) || VACIAS.has(normal(w[w.length - 1]))) return false;
+  if (/^(mayoría|mayoria|parte|forma|manera|importancia|razón|razon|idea|verdad|diferencia|única|unica|primera|segunda|mejor|peor|clave|meta|tarea|ventaja)$/i.test(w[0])) return false;
+  return w.every(x => /^[a-záéíóúñü]+$/i.test(x));
+}
+
+// "El lenguaje es la capacidad que tenemos...", "La X consiste en...", "un emisor, que es quien transmite el mensaje"
+function definicionesDeFrase(f) {
+  const out = [];
+  const m = f.match(/^(el|la|los|las)\s+(.{3,40}?)\s+(es|son|significa|consiste en|se refiere a|se define como)\s+(.+)$/i);
+  if (m) {
+    const t = limpio(m[2]), resto = limpio(m[4]);
+    const sigue = normal(resto.split(' ')[0]);
+    const copula = /^(es|son)$/i.test(m[3]);
+    if (terminoSirve(t) && palabras(resto).length >= 4 &&
+      (!copula || /^(el|la|los|las|un|una|unos|unas|quien|quienes|aquel|aquella|aquello|cuando|todo|toda)$/.test(sigue)))
+      out.push({ termino: mayus(t), art: m[1].toLowerCase(), definicion: mayus(acortar(m[3].toLowerCase() + ' ' + resto)) });
+  }
+  for (const a of f.matchAll(/(?:^|\s)(un|una|el|la|los|las)\s+([a-záéíóúñü]+(?:\s+no)?(?:\s+[a-záéíóúñü]+)?),\s+que\s+(.+?)(?=,\s+y\s+(?:un|una|el|la|los|las)\s|[.;]|$)/gi)) {
+    const t = limpio(a[2]), resto = limpio(a[3]);
+    if (terminoSirve(t) && palabras(resto).length >= 3) out.push({ termino: mayus(t), art: a[1].toLowerCase(), definicion: mayus(acortar(resto)) });
+  }
+  return out;
+}
+
+// "intervienen otros elementos, como el mensaje, el canal, el codigo y el contexto"
+function enumeraciones(f) {
+  const out = [];
+  const re = /([a-záéíóúñü]+)(?:\s+([a-záéíóúñü]+))?,?\s+como\s+((?:[^,.;]+,\s+)+[^,.;]+?\s+(?:y|o|e|u)\s+[^,.;]+?)(?=[.;]|,\s+que\b|$)/gi;
+  for (const m of f.matchAll(re)) {
+    const w1 = m[1].toLowerCase(), w2 = (m[2] || '').toLowerCase();
+    const adjetivo = w => /(ntes|ales|icos|icas|ivos|ivas|ares|osos|osas)$/.test(w) || /^(principales|básicos|basicos|básicas|basicas|comunes|importantes)$/.test(w);
+    let nombre;
+    if (!w2) nombre = w1;
+    else if (adjetivo(w2) && !VACIAS.has(normal(w1))) nombre = w1 + ' ' + w2;
+    else nombre = w2;
+    const nucleo = nombre.split(' ')[0];
+    if (!/s$/.test(nucleo) || VACIAS.has(normal(nucleo)) || /^(otros|otras|algunos|algunas|varios|varias|muchos|muchas|ciertos|ciertas|cosas)$/.test(nucleo)) continue;
+    const elementos = m[3].split(/,\s+|\s+(?:y|o|e|u)\s+/).map(x => limpio(x).replace(/^(el|la|los|las|un|una|unos|unas)\s+/i, ''))
+      .filter(x => x && palabras(x).length <= 6).map(mayus);
+    if (elementos.length >= 3 && new Set(elementos.map(normal)).size === elementos.length) out.push({ nombre: mayus(nombre), elementos });
+  }
+  return out;
 }
 
 // ===========================================================================
 
 function parcialBasico(datos, contenido, eleccion) {
-  const A = analizar(contenido);
+  const A = analizarUnaVez(contenido);
   const usados = new Set();             // conceptos que ya son respuesta de una serie
   const frasesUsadas = new Set();
   const libres = () => A.glosario.filter(g => !usados.has(normal(g.termino)));
@@ -148,6 +216,14 @@ function parcialBasico(datos, contenido, eleccion) {
   const veces = (f, r) => (normal(f).match(new RegExp('(^|[^\\wáéíóúñü])' + escapar(normal(r)) + '(?=$|[^\\wáéíóúñü])', 'g')) || []).length;
   const sirve = (f, r) => veces(f, r) === 1 && !respuestas.some(x => contiene(f, x)) && !visibles.some(v => contiene(v, r));
   const anotar = (f, r) => { respuestas.push(r); visibles.push(f); };
+  const gruposUsados = new Set(), conDibujo = eleccion.some(e => e.tipo === 'dibujo');
+  // dos conceptos que no son respuesta, primero del glosario y si faltan de los grupos del parrafo
+  const sobrantes = usadas => {
+    const fuera = t => !usadas.some(u => normal(u) === normal(t));
+    const del = A.glosario.map(g => g.termino).filter(fuera).slice(-2);
+    const mas = A.enumerados.flatMap(g => g.elementos).filter(t => fuera(t) && !del.some(d => normal(d) === normal(t)));
+    return [...del, ...mas].slice(0, 2);
+  };
 
   const constructores = {
     ordenar(n) {
@@ -175,7 +251,11 @@ function parcialBasico(datos, contenido, eleccion) {
     dibujo(n) {
       const grupos = A.secciones.map((s, i) => A.glosario.filter(g => g.grupo === i && g.fuente === 'lista'));
       grupos.sort((a, b) => b.length - a.length);
-      let partes = (grupos[0] || []).length >= n ? grupos[0] : A.glosario;
+      // si no hay una lista con titulo, un grupo de partes o elementos escrito en el parrafo
+      // (uno que ya use clasificar no, las partes regalarian la respuesta)
+      const enParrafo = A.enumerados.find(g => g.elementos.length >= n && PARTES.test(g.nombre) && !gruposUsados.has(g.nombre));
+      // los conceptos sacados de un parrafo corrido no son partes de algo que se dibuja
+      let partes = (grupos[0] || []).length >= n ? grupos[0] : enParrafo ? enParrafo.elementos.map(termino => ({ termino })) : A.glosario.filter(g => g.fuente !== 'prosa');
       if (partes.length < n) throw new Error(`no hay ${n} conceptos para señalar`);
       partes = partes.slice(0, n).map(g => g.termino);
       const tema = A.tema || datos.materia;
@@ -188,11 +268,17 @@ function parcialBasico(datos, contenido, eleccion) {
         const items = li.items.map(it => { const c = concepto(it); return c ? c.termino : (palabras(it).length <= 4 ? punto(it).replace(/\.$/, '') : null); }).filter(Boolean);
         if (s.titulo && items.length >= 2) grupos.push({ nombre: s.titulo, elementos: items });
       }));
+      const lista = grupos.length;
+      for (const g of A.enumerados) grupos.push({ nombre: g.nombre, elementos: [...g.elementos], parrafo: true });
       const vistos = new Set();                    // un elemento en una sola categoria
       for (const g of grupos) g.elementos = g.elementos.filter(e => { const k = normal(e); if (vistos.has(k)) return false; vistos.add(k); return true; });
-      const buenos = grupos.filter(g => g.elementos.length >= 2).sort((a, b) => b.elementos.length - a.elementos.length).slice(0, 4);
-      if (buenos.length < 2 || buenos.reduce((a, g) => a + g.elementos.length, 0) < n)
-        throw new Error(`no hay dos o más títulos con su lista debajo que junten ${n} elementos`);
+      const escoger = gs => gs.filter(g => g.elementos.length >= 2).sort((a, b) => b.elementos.length - a.elementos.length).slice(0, 4);
+      const alcanza = bs => bs.length >= 2 && bs.reduce((a, g) => a + g.elementos.length, 0) >= n;
+      // si tambien va Dibujar, se le deja el grupo de partes cuando las demas alcanzan
+      let buenos = escoger(grupos.filter((g, i) => i < lista || !(conDibujo && PARTES.test(g.nombre))));
+      if (!alcanza(buenos)) buenos = escoger(grupos);
+      if (!alcanza(buenos)) throw new Error(`no hay dos o más títulos con su lista debajo que junten ${n} elementos`);
+      buenos.forEach(g => { if (g.parrafo) gruposUsados.add(g.nombre); });
       const cats = buenos.map(g => ({ nombre: g.nombre, elementos: [] }));
       for (let k = 0, i = 0; k < n; i++) {       // se reparte por turnos, asi ninguna queda vacia
         const g = buenos[i % buenos.length], c = cats[i % buenos.length];
@@ -204,8 +290,9 @@ function parcialBasico(datos, contenido, eleccion) {
     parear(n) {
       const disp = libres().filter(g => !frasesUsadas.has(normal(g.definicion)));
       if (disp.length < n) throw new Error(`hay ${disp.length} conceptos con su definición y hacen falta ${n}`);
-      const pares = disp.slice(0, n).map(g => { usar(g.termino); frasesUsadas.add(normal(g.definicion)); return { definicion: g.definicion, concepto: g.termino }; });
-      const trampas = A.glosario.map(g => g.termino).filter(t => !pares.some(p => p.concepto === t)).slice(-2);
+      // el concepto queda como respuesta, asi ninguna otra serie usa una oracion que lo traiga escrito
+      const pares = disp.slice(0, n).map(g => { usar(g.termino); respuestas.push(g.termino); frasesUsadas.add(normal(g.definicion)); return { definicion: g.definicion, concepto: g.termino }; });
+      const trampas = sobrantes(pares.map(p => p.concepto));
       if (trampas.length < 2) throw new Error('faltan dos conceptos de más para las trampas');
       return { pares, trampas };
     },
@@ -235,7 +322,7 @@ function parcialBasico(datos, contenido, eleccion) {
         frasesUsadas.add(normal(f)); usar(clave);
       }
       if (oraciones.length < n) throw new Error(`solo se encontraron ${oraciones.length} oraciones para completar`);
-      const trampas = A.glosario.map(g => g.termino).filter(t => !oraciones.some(o => normal(o.palabra) === normal(t))).slice(-2);
+      const trampas = sobrantes(oraciones.map(o => o.palabra));
       if (trampas.length < 2) throw new Error('faltan dos palabras de más para las trampas');
       return { oraciones, trampas };
     },
@@ -295,8 +382,11 @@ function parcialBasico(datos, contenido, eleccion) {
         const cambiar = (de, a) => {
           const real = f.match(new RegExp('(^|[^\\wáéíóúñü])(' + escapar(de) + ')(?=$|[^\\wáéíóúñü])', 'i'));
           if (!real) return null;
-          const r = real[2][0] === real[2][0].toUpperCase() ? mayus(a) : a;
-          return f.slice(0, real.index + real[1].length) + r + f.slice(real.index + real[0].length);
+          let r = real[2][0] === real[2][0].toUpperCase() ? mayus(a) : a;
+          const despues = f.slice(real.index + real[0].length);
+          // concuerda con la palabra que sigue, "grandes distancias" pasa a "pequeñas distancias"
+          if (/^\s+[a-záéíóúñ]+as\b/i.test(despues)) r = r.replace(/os$/, 'as').replace(/o$/, 'a');
+          return f.slice(0, real.index + real[1].length) + r + despues;
         };
         let falsa = null;
         if (contra) falsa = contiene(f, contra[0]) ? cambiar(contra[0], contra[1]) : cambiar(contra[1], contra[0]);
@@ -306,7 +396,13 @@ function parcialBasico(datos, contenido, eleccion) {
           const otro = terminos.find(o => normal(o) !== normal(t) && !contiene(f, o) && A.glosario.find(g => g.termino === o).grupo === A.glosario.find(g => g.termino === t).grupo)
             || terminos.find(o => normal(o) !== normal(t) && !contiene(f, o));
           const real = f.match(new RegExp(escapar(t), 'i'));
-          if (otro && real) falsa = f.replace(real[0], real.index === 0 ? mayus(otro) : minus(otro));
+          if (otro && real) {
+            // el articulo de antes va con el concepto nuevo, "la comunicacion" pasa a "el lenguaje"
+            let antes = f.slice(0, real.index);
+            const art = (A.glosario.find(g => g.termino === otro) || {}).art;
+            if (art) antes = antes.replace(/(^|\s)(el|la|los|las)\s+$/i, (x, e, a) => `${e}${a[0] === a[0].toUpperCase() ? mayus(art) : art} `);
+            falsa = contraer(antes + (real.index === 0 ? mayus(otro) : minus(otro)) + f.slice(real.index + real[0].length));
+          }
         } else if (mes) {
           const real = f.match(new RegExp(mes, 'i'));
           const otro = MESES[(MESES.indexOf(mes) + 3) % 12];
@@ -333,18 +429,18 @@ function parcialBasico(datos, contenido, eleccion) {
     abiertas(n) {
       const peso = g => (g.fuente === 'lista' ? 0 : g.fuente === 'frase' ? 1 : 5) + (usados.has(normal(g.termino)) ? 3 : 0);
       const pool = [...A.glosario].sort((a, b) => peso(a) - peso(b));
-      if (pool.length < Math.min(n, 2)) throw new Error('no hay conceptos para preguntar');
+      if (pool.length + A.enumerados.length < Math.min(n, 2)) throw new Error('no hay conceptos para preguntar');
       const tema = minus(A.tema || datos.materia);
       const preguntas = [];
       for (let k = 0; preguntas.length < n && k < pool.length; k++) {
-        const g = pool[k], t = minus(g.termino), d = minus(g.definicion);
+        const g = pool[k], t = (g.art ? g.art + ' ' : '') + minus(g.termino), d = minus(g.definicion);
         if (/^como /i.test(g.definicion)) {          // la definicion son ejemplos
           preguntas.push({ pregunta: `Escriba dos ejemplos de ${t} que pueda ver en su casa o su comunidad y explique por qué lo son.`, respuesta: `Por ejemplo ${d.replace(/^como /i, '')}` });
           continue;
         }
         switch (preguntas.length % 4) {
-          case 0: preguntas.push({ pregunta: contraer(`¿Qué es ${t} y por qué es importante en ${tema}?`), respuesta: `Debe explicar que ${d}` }); break;
-          case 1: preguntas.push({ pregunta: `Explique con sus palabras qué sucede en ${t} y dé un ejemplo de la vida diaria.`, respuesta: `${g.definicion} El ejemplo debe ser de su casa o su comunidad.` }); break;
+          case 0: preguntas.push({ pregunta: contraer(`¿Qué es ${t} y por qué es importante en ${contiene(tema, g.termino) ? 'la vida diaria' : tema}?`), respuesta: `Debe explicar que ${d}` }); break;
+          case 1: preguntas.push({ pregunta: contraer(g.fuente === 'prosa' ? `Explique con sus palabras qué es ${t} y dé un ejemplo de la vida diaria.` : `Explique con sus palabras qué sucede en ${t} y dé un ejemplo de la vida diaria.`), respuesta: `${g.definicion} El ejemplo debe ser de su casa o su comunidad.` }); break;
           case 2: {
             // se compara con otro concepto de la misma lista, que no se haya preguntado
             const h = pool.slice(k + 1).find(o => o.grupo === g.grupo && o.fuente === 'lista' && g.fuente === 'lista' && !/^como /i.test(o.definicion));
@@ -354,6 +450,13 @@ function parcialBasico(datos, contenido, eleccion) {
           }
           default: preguntas.push({ pregunta: `¿Qué pasaría si no existiera ${t}? Explique.`, respuesta: `Debe relacionarlo con que ${d}` });
         }
+      }
+      // si faltan, de los grupos escritos en el parrafo
+      for (const g of A.enumerados) {
+        if (preguntas.length >= n) break;
+        const k = Math.min(3, g.elementos.length - 1);
+        preguntas.push({ pregunta: `Mencione ${NUMEROS[k - 1]} ${minus(g.nombre)} que se vieron en clase y explique una de ellas con un ejemplo.`,
+          respuesta: `Puede mencionar ${g.elementos.map(minus).join(', ')}.` });
       }
       if (preguntas.length < n) throw new Error(`solo salieron ${preguntas.length} preguntas`);
       return { preguntas };

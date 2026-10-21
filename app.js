@@ -15,7 +15,7 @@ const PESO = { seleccion: 0.9, abiertas: 1.5, vf: 0.9, completar: 1, parear: 1, 
 const TOPE = { ordenar: 5, dibujo: 6 };
 const LOGO_SABER = 'logo-saber.jpg';
 
-const estado = { logo: null, parcial: null, m: null, mres: null, vista: 'examen', ia: {} };
+const estado = { logo: null, parcial: null, m: null, mres: null, vista: 'examen', capaz: null, quitadas: new Set(), fijadas: {}, avisosPlan: [] };
 
 function leerGuardado() {
   try { return JSON.parse(localStorage.getItem(CLAVE)) || {}; } catch (e) { return {}; }
@@ -42,6 +42,17 @@ const datos = () => ({
 const eleccion = () => ORDEN.filter(t => $('s-' + t).checked).map(t => ({ tipo: t, puntos: puntosDe(t) }));
 // Los puntos con los que cada serie se puede armar
 const valores = t => Array.from({ length: 60 }, (_, i) => i + 1).filter(p => plan(t, p));
+// Los que ademas salen con el texto pegado (sin texto, todos)
+const sirven = t => valores(t).filter(p => !estado.capaz || estado.capaz[t].has(plan(t, p).n));
+const nombre = t => SERIES[t].nombre;
+const HOJAS = [1, 2, 3, 4];
+// Por que una serie no sale con el texto, en palabras del maestro
+const PORQUE = {
+  ordenar: 'su texto no trae pasos numerados', completar: 'su texto no trae suficientes conceptos',
+  dibujo: 'su texto no trae partes para señalar', clasificar: 'su texto no trae grupos con su lista',
+  abiertas: 'su texto no trae conceptos para preguntar', vf: 'su texto no trae oraciones para cambiar',
+  seleccion: 'su texto no trae suficientes conceptos', parear: 'su texto no trae conceptos con su definición',
+};
 
 // ===========================================================================
 // ARMAR LA PANTALLA
@@ -53,8 +64,8 @@ function iniciar() {
   $('materia').innerHTML = MATERIAS.map(x => `<option>${x}</option>`).join('') + '<option value="otra">Otra materia</option>';
   $('series').innerHTML = ORDEN.map(t => `
     <div class="serie" id="caja-${t}">
-      <input type="checkbox" id="s-${t}" aria-label="${SERIES[t].nombre}">
-      <label class="nombre" for="s-${t}">${SERIES[t].nombre}</label>
+      <input type="checkbox" id="s-${t}" aria-label="${nombre(t)}">
+      <label class="nombre" for="s-${t}">${nombre(t)}</label>
       <div class="contador-num" data-serie="${t}"><button type="button" data-paso="-1" aria-label="Menos puntos">−</button><output id="p-${t}">5</output><button type="button" data-paso="1" aria-label="Más puntos">+</button></div>
       <span class="detalle" id="d-${t}"></span>
     </div>`).join('');
@@ -68,11 +79,15 @@ function iniciar() {
   if (g.series) for (const t of ORDEN) {
     $('s-' + t).checked = !!g.series[t].marcada;
     $('p-' + t).textContent = g.series[t].puntos || valores(t)[0];
-  } else marcarIniciales();
+  } else for (const t of ORDEN) $('s-' + t).checked = INICIALES[1].includes(t);
   if (g.texto) $('texto').value = g.texto;
   ponerLogo();
 
-  document.addEventListener('input', e => { if (e.target.closest('.paso') && e.target.id !== 'abrir') { revisar(); guardar(); } });
+  document.addEventListener('input', e => {
+    if (!e.target.closest('.paso') || e.target.id === 'abrir') return;
+    if (e.target.id === 'texto') textoCambio();
+    revisar(); guardar();
+  });
   document.addEventListener('change', e => {
     if (!e.target.closest('.paso')) return;
     if (e.target.id === 'tipo-examen') {           // el parcial va en una hoja y el examen final en dos
@@ -80,21 +95,34 @@ function iniciar() {
       const parcial = /parcial/i.test(e.target.value);
       $('hojas').textContent = parcial ? 1 : 2;
       $('total').textContent = parcial ? 15 : 30;
-      marcarIniciales();
+      estado.quitadas.clear(); estado.fijadas = {};
+      acomodar({ quiero: new Set(INICIALES[parcial ? 1 : 2]) });
     }
-    if (e.target.type === 'checkbox' && e.target.id.startsWith('s-')) repartir();
+    if (e.target.type === 'checkbox' && e.target.id.startsWith('s-')) {
+      const t = e.target.id.slice(2);
+      if (e.target.checked) { estado.quitadas.delete(t); acomodar({ con: t }); }
+      else { estado.quitadas.add(t); delete estado.fijadas[t]; acomodar({ sin: t }); }
+    }
     revisar(); guardar();
   });
   document.addEventListener('click', e => {
     const b = e.target.closest('.contador-num button');
-    if (!b || b.disabled) return;
-    mover(b.closest('.contador-num'), +b.dataset.paso);
-    revisar(); guardar();
+    if (b) {
+      if (b.disabled) return;
+      mover(b.closest('.contador-num'), +b.dataset.paso);
+      revisar(); guardar();
+      return;
+    }
+    // toda la tarjeta de la serie se marca con un clic, no solo el cuadrito
+    const caja = e.target.closest('.serie');
+    if (caja && !e.target.closest('input, label, .contador-num')) {
+      const c = caja.querySelector('input[type="checkbox"]');
+      if (!c.disabled) { c.checked = !c.checked; c.dispatchEvent(new Event('change', { bubbles: true })); }
+    }
   });
-  $('repartir').addEventListener('click', () => { repartir(); revisar(); guardar(); });
   $('archivos').addEventListener('change', subirArchivos);
   $('ejemplo').addEventListener('click', ponerEjemplo);
-  $('borrar-texto').addEventListener('click', () => { $('texto').value = ''; revisar(); guardar(); });
+  $('borrar-texto').addEventListener('click', () => { $('texto').value = ''; textoCambio(true); revisar(); guardar(); });
   $('crear').addEventListener('click', crear);
   document.querySelectorAll('.pestanas button').forEach(b => b.addEventListener('click', () => { estado.vista = b.dataset.vista; pintar(); }));
   $('bajar-word').addEventListener('click', bajarWord);
@@ -103,51 +131,248 @@ function iniciar() {
   $('mezclar').addEventListener('click', () => { estado.parcial.semilla = Math.floor(Math.random() * 1e6); mostrar(); });
   $('guardar').addEventListener('click', () => bajar(new Blob([JSON.stringify(estado.parcial, null, 1)], { type: 'application/json' }), nombreArchivo('PARCIAL') + '.json'));
   $('abrir').addEventListener('change', abrirGuardado);
-  revisar();
+  medirTexto();
+  acomodar({ quiero: g.series ? undefined : new Set(INICIALES[Math.min(2, hojas())]) });
+  revisar(); guardar();
 }
 
-// Un contador sube o baja al siguiente valor que sirve
+// ===========================================================================
+// EL ACOMODO AUTOMATICO
+// El maestro solo marca, quita y toca + y −. Las series, los puntos y las hojas se mueven
+// solos para que siempre cuadre y siempre salga con su texto, y una linea dice que se movio.
+// ===========================================================================
+
+// Que cantidades de preguntas salen con el texto pegado, serie por serie
+function medirTexto() {
+  const texto = $('texto').value.trim();
+  if (texto.length < 200) { estado.capaz = null; return; }
+  const capaz = {};
+  for (const t of ORDEN) {
+    capaz[t] = new Set();
+    const ns = new Map();
+    for (const p of valores(t)) if (!ns.has(plan(t, p).n)) ns.set(plan(t, p).n, p);
+    for (const [n, p] of ns) {
+      try { if (!parcialBasico(datos(), texto, [{ tipo: t, puntos: p }]).cambios.length) capaz[t].add(n); } catch (e) { /* no sale con ese largo */ }
+    }
+  }
+  estado.capaz = capaz;
+}
+
+// Mientras escribe o pega se espera un momento antes de volver a medir
+function textoCambio(ya) {
+  clearTimeout(estado.espera);
+  const hacer = () => { medirTexto(); acomodar({}); revisar(); guardar(); };
+  if (ya) hacer(); else estado.espera = setTimeout(hacer, 700);
+}
+
+// Reparte T puntos entre estas series, cerca de lo que pesa cada una. fijo = la serie que el maestro movio
+function repartirEn(tipos, T, fijo) {
+  const suma = tipos.reduce((a, t) => a + PESO[t], 0), esc = Math.max(1, T / 30);
+  let capa = new Map([[0, { costo: 0, valores: [] }]]);
+  for (const t of tipos) {
+    const meta = T * PESO[t] / suma, sig = new Map();
+    const lista = fijo && fijo.tipo === t ? [fijo.puntos] : sirven(t);
+    for (const [s, r] of capa) for (const v of lista) {
+      if (s + v > T) break;
+      let c = r.costo + ((v - meta) / esc) ** 2;
+      if (TOPE[t] && v > TOPE[t]) c += 100 * (v - TOPE[t]);
+      if (estado.fijadas[t]) c += 4 * ((v - estado.fijadas[t]) / esc) ** 2;   // lo que el maestro ya acomodo a mano
+      const ya = sig.get(s + v);
+      if (!ya || c < ya.costo) sig.set(s + v, { costo: c, valores: [...r.valores, v] });
+    }
+    capa = sig;
+  }
+  return capa.get(T) || null;
+}
+
+// Todas las formas de armar el examen con H hojas y T puntos, la mas parecida a lo marcado primero
+function candidatos(H, T, quiero, { con, sin, fijo } = {}, primero) {
+  const disp = ORDEN.filter(t => t !== sin && sirven(t).length);
+  const ideal = H === 1 ? 2 : Math.min(7, Math.round(2.5 * H));
+  const out = [];
+  for (let mask = 1; mask < 1 << disp.length; mask++) {
+    const S = disp.filter((_, i) => mask >> i & 1);
+    if (S.length < 2 * H || (S.includes('completar') && S.includes('parear'))) continue;
+    if ((con && !S.includes(con)) || (fijo && !S.includes(fijo.tipo))) continue;
+    const r = repartirEn(S, T, fijo);
+    if (!r) continue;
+    if (primero) return [{ S, valores: r.valores }];
+    let costo = r.costo + 10 * Math.abs(S.length - ideal);
+    for (const t of ORDEN) {
+      if (quiero.has(t) && !S.includes(t)) costo += 30;
+      if (!quiero.has(t) && S.includes(t)) costo += estado.quitadas.has(t) ? 60 : 12;
+    }
+    out.push({ S, valores: r.valores, costo });
+  }
+  return out.sort((a, b) => a.costo - b.costo);
+}
+const hay = (H, T, quiero, acc) => candidatos(H, T, quiero, acc, true).length > 0;
+
+// Prueba de verdad que el examen sale con el texto, sin cambiar ninguna serie.
+// 2 = sale limpio, 1 = sale pero una respuesta se ve escrita en otra serie, 0 = no sale
+function sale(c) {
+  const texto = $('texto').value.trim();
+  if (texto.length < 200) return 2;
+  try {
+    const p = parcialBasico(datos(), texto, c.S.map((t, i) => ({ tipo: t, puntos: c.valores[i] })));
+    return p.cambios.length ? 0 : cruces(p.series).length ? 1 : 2;
+  } catch (e) { return 0; }
+}
+
+// Acomoda todo despues de lo que hizo el maestro. acc.con o acc.sin = la serie que marco o quito,
+// acc.fijo = la serie a la que le movio los puntos, acc.que = 'hojas' o 'total' si toco eso.
+// Si con las hojas y el punteo de ahora no se puede, se mueve lo otro y se avisa.
+function acomodar(acc) {
+  const antes = { H: hojas(), T: total(), marcadas: new Set(eleccion().map(e => e.tipo)) };
+  const quiero = acc.quiero || new Set(antes.marcadas);
+  if (acc.con) quiero.add(acc.con);
+  if (acc.sin) quiero.delete(acc.sin);
+  // si el maestro no toco las series y lo de ahora ya cuadra y sale con el texto, se respeta tal cual
+  if (!acc.quiero && !acc.con && !acc.sin && !acc.fijo && !acc.que) {
+    const el = eleccion();
+    const ahora = { S: el.map(e => e.tipo), valores: el.map(e => e.puntos) };
+    if (!revisarEleccion(el, antes.T, antes.H).length && sale(ahora)) { estado.avisosPlan = []; return true; }
+  }
+  const cerca = (lista, v) => lista.filter(x => x !== v).sort((a, b) => Math.abs(a - v) - Math.abs(b - v) || b - a);
+  const intentos = [[antes.H, antes.T]];
+  if (acc.que === 'hojas') intentos.push(...cerca(TOTALES, antes.T).map(T => [antes.H, T]));
+  else if (acc.que === 'total') intentos.push(...cerca(HOJAS, antes.H).map(H => [H, antes.T]));
+  else if (!acc.fijo) intentos.push(...cerca(HOJAS, antes.H).map(H => [H, antes.T]), ...cerca(TOTALES, antes.T).map(T => [antes.H, T]));
+  let elegido = null, respaldo = null, probados = 0;
+  for (const [H, T] of intentos) {
+    let aqui = 0;
+    for (const c of candidatos(H, T, quiero, acc)) {
+      if (aqui++ >= 12 || probados++ >= 60) break;
+      const r = sale(c);
+      if (r === 2) { elegido = { H, T, c }; break; }
+      if (r === 1 && !respaldo) respaldo = { H, T, c };
+    }
+    // con estas hojas y este punteo, mejor uno donde ninguna respuesta se vea en otra serie
+    if (!elegido && respaldo) elegido = respaldo;
+    if (elegido || probados >= 60) break;
+  }
+  const avisos = [];
+  if (!elegido) {
+    // no hay forma, se deja como estaba
+    if (acc.con) $('s-' + acc.con).checked = false;
+    if (acc.sin) $('s-' + acc.sin).checked = true;
+    if (acc.con || acc.sin) avisos.push(`${nombre(acc.con || acc.sin)} no se puede ${acc.con ? 'agregar' : 'quitar'}, así ya no cuadra.`);
+    else if (acc.que === 'hojas') avisos.push(`Con este texto no salen preguntas para ${antes.H} hojas. Pegue más contenido de sus clases.`);
+    else if (acc.que === 'total') avisos.push(`Con este texto no salen preguntas para ${antes.T} puntos. Pegue más contenido de sus clases.`);
+    else if (estado.capaz) avisos.push('Con este texto no alcanza para el examen. Pegue más contenido de sus clases.');
+    estado.avisosPlan = avisos;
+    return false;
+  }
+  const { H, T, c } = elegido;
+  $('hojas').textContent = H;
+  $('total').textContent = T;
+  for (const t of ORDEN) {
+    const i = c.S.indexOf(t);
+    $('s-' + t).checked = i >= 0;
+    if (i >= 0) $('p-' + t).textContent = c.valores[i];
+  }
+  // lo que se movio solo, en una linea cada cosa
+  const las = n => n === 1 ? 'la hoja' : `las ${n} hojas`;
+  if (H !== antes.H) avisos.push(`Con ${T} puntos el examen va en ${H} hoja${H > 1 ? 's' : ''}.`);
+  if (T !== antes.T) avisos.push(`Para ${H} hoja${H > 1 ? 's' : ''} el punteo pasa a ${T}.`);
+  const quitadas = [...antes.marcadas].filter(t => !c.S.includes(t) && t !== acc.sin);
+  if (!acc.quiero) for (const t of quitadas) {
+    const otra = t === 'completar' ? 'parear' : t === 'parear' ? 'completar' : null;
+    avisos.push(otra && c.S.includes(otra) ? `Se quitó ${nombre(t)} porque no va junto con ${nombre(otra)}.`
+      : !sirven(t).length ? `Se quitó ${nombre(t)}, ${PORQUE[t]}.`
+      : estado.capaz ? `Se quitó ${nombre(t)} para que todo salga con su texto.` : `Se quitó ${nombre(t)} para que cuadren los puntos.`);
+  }
+  const puestas = c.S.filter(t => !antes.marcadas.has(t) && t !== acc.con);
+  if (!acc.quiero) for (const t of puestas) avisos.push(quitadas.length || acc.sin ? `Se puso ${nombre(t)} en su lugar.` : `Se agregó ${nombre(t)} para llenar ${las(H)}.`);
+  estado.avisosPlan = avisos;
+  return true;
+}
+
+// Un contador sube o baja. Las hojas y el punteo mueven lo demas; los puntos de una serie
+// saltan al siguiente valor con el que todo sigue cuadrando.
 function mover(caja, paso) {
   const serie = caja.dataset.serie, campo = caja.dataset.campo;
   const out = caja.querySelector('output'), v = +out.textContent;
-  const lista = serie ? valores(serie) : campo === 'hojas' ? [1, 2, 3, 4] : TOTALES;
-  let i = lista.indexOf(v);
-  if (i < 0) i = lista.findIndex(x => x > v) - (paso > 0 ? 1 : 0);
-  out.textContent = lista[Math.max(0, Math.min(lista.length - 1, i + paso))];
-  if (campo === 'total') repartir();
-  if (campo === 'hojas' && eleccion().length < hojas() * 2) marcarIniciales();
-}
-
-function marcarIniciales() {
-  const ini = INICIALES[Math.min(2, hojas())] || INICIALES[2];
-  const extra = ['vf', 'clasificar', 'completar'];
-  const quiero = [...ini];
-  while (quiero.length < hojas() * 2 && extra.length) {     // con 3 o 4 hojas se agregan series
-    const t = extra.shift();
-    if (!(t === 'completar' && quiero.includes('parear'))) quiero.push(t);
+  if (serie) {
+    const sig = siguientePunto(serie, paso);
+    if (sig == null) return;
+    estado.fijadas[serie] = sig;
+    acomodar({ fijo: { tipo: serie, puntos: sig } });
+    return;
   }
-  for (const t of ORDEN) $('s-' + t).checked = quiero.includes(t);
-  repartir();
+  const sig = siguienteCampo(campo, paso);
+  if (sig == null) {
+    // el boton no se apaga, al tocarlo dice hasta donde se puede
+    const s = v > 1 ? 's' : '';
+    estado.avisosPlan = [campo === 'hojas'
+      ? (paso > 0 ? `Con este texto y este punteo lo más son ${v} hoja${s}.` : `Con este punteo lo menos son ${v} hoja${s}.`)
+      : `Con este texto el punteo no puede ${paso > 0 ? 'subir' : 'bajar'} más.`];
+    return;
+  }
+  out.textContent = sig;
+  if (!acomodar({ que: campo })) out.textContent = v;
 }
 
-// Reparte el punteo entre las series marcadas, cerca de lo que pesa cada una
-function repartir() {
-  const el = eleccion(), T = total();
-  if (!el.length) return;
-  const suma = el.reduce((a, e) => a + PESO[e.tipo], 0);
-  // mejor[i][s] = menor desvio usando las primeras i series para sumar s
-  const mejor = [new Map([[0, { costo: 0, valores: [] }]])];
-  el.forEach((e, i) => {
-    const meta = T * PESO[e.tipo] / suma, sig = new Map();
-    for (const [s, r] of mejor[i]) for (const v of valores(e.tipo)) {
-      if (s + v > T) break;
-      const c = r.costo + (v - meta) ** 2 + (TOPE[e.tipo] && v > TOPE[e.tipo] ? 100 * (v - TOPE[e.tipo]) : 0), ya = sig.get(s + v);
-      if (!ya || c < ya.costo) sig.set(s + v, { costo: c, valores: [...r.valores, v] });
-    }
-    mejor.push(sig);
-  });
-  const fin = mejor[el.length].get(T);
-  if (fin) el.forEach((e, i) => { $('p-' + e.tipo).textContent = fin.valores[i]; });
+function siguientePunto(t, paso) {
+  const quiero = new Set(eleccion().map(e => e.tipo)), v = puntosDe(t), H = hojas(), T = total();
+  // las demas series necesitan al menos 4 puntos cada una
+  const lista = sirven(t).filter(x => (paso > 0 ? x > v : x < v) && x <= T - 4 * (2 * H - 1));
+  if (paso < 0) lista.reverse();
+  for (const p of lista.slice(0, 6)) if (hay(H, T, quiero, { fijo: { tipo: t, puntos: p } })) return p;
+  return null;
+}
+
+function siguienteCampo(campo, paso) {
+  const lista = campo === 'hojas' ? HOJAS : TOTALES, v = +$(campo).textContent;
+  const quiero = new Set(eleccion().map(e => e.tipo));
+  const pasos = lista.filter(x => paso > 0 ? x > v : x < v);
+  if (paso < 0) pasos.reverse();
+  // sirve si con lo otro de ahora, o moviendolo, hay alguna forma de armarlo
+  for (const x of pasos) {
+    const ok = campo === 'hojas' ? TOTALES.some(T => hay(x, T, quiero)) : HOJAS.some(H => hay(H, x, quiero));
+    if (ok) return x;
+  }
+  return null;
+}
+
+// Revisa la eleccion de series cada vez que algo cambia
+function revisar() {
+  $('caja-materia-otra').hidden = $('materia').value !== 'otra';
+  for (const t of ORDEN) {
+    const marcada = $('s-' + t).checked, puntos = puntosDe(t), puede = sirven(t).length > 0;
+    $('caja-' + t).classList.toggle('activa', marcada);
+    $('caja-' + t).classList.toggle('no-sale', !puede);
+    $('s-' + t).disabled = !puede && !marcada;
+    const pl = plan(t, puntos), d = $('d-' + t);
+    d.classList.toggle('mal', !puede);
+    d.textContent = !puede ? mayus(PORQUE[t]) + '.' : !marcada ? 'Toque para agregarla' : !pl ? '' : t === 'dibujo' ? `Dibujo de 2 puntos y ${pl.n} partes de 1 punto`
+      : `${pl.n} ${t === 'ordenar' ? 'pasos' : t === 'clasificar' ? 'elementos' : 'preguntas'} de ${pts(pl.valor)}`;
+  }
+  const el = eleccion(), suma = el.reduce((a, e) => a + e.puntos, 0);
+  const malos = revisarEleccion(el, total(), hojas());
+  const H = hojas();
+  $('suma').textContent = malos.length ? malos.join(' ') : `Listo, ${el.length} series en ${H} hoja${H > 1 ? 's' : ''} que suman ${suma} puntos.`;
+  $('suma').className = 'suma ' + (malos.length ? 'mal' : 'bien');
+  $('cambios').innerHTML = (estado.avisosPlan || []).map(a => `<li>${esc(a)}</li>`).join('');
+  const n = $('texto').value.trim().length;
+  $('cuenta').textContent = n ? `${n.toLocaleString('es')} letras` : '';
+  pintarBotones();
+  return malos;
+}
+
+// Un boton de + o − se apaga si ya no hay a donde moverse
+function pintarBotones() {
+  for (const t of ORDEN) {
+    const caja = document.querySelector(`[data-serie="${t}"]`), marcada = $('s-' + t).checked;
+    caja.querySelector('[data-paso="-1"]').disabled = !marcada || siguientePunto(t, -1) == null;
+    caja.querySelector('[data-paso="1"]').disabled = !marcada || siguientePunto(t, 1) == null;
+  }
+  for (const campo of ['hojas', 'total']) {
+    const caja = document.querySelector(`[data-campo="${campo}"]`);
+    const lista = campo === 'hojas' ? HOJAS : TOTALES, v = +$(campo).textContent;
+    caja.querySelector('[data-paso="-1"]').disabled = v <= lista[0];
+    caja.querySelector('[data-paso="1"]').disabled = v >= lista[lista.length - 1];
+  }
 }
 
 async function cargarLogo(url) {
@@ -165,35 +390,6 @@ async function ponerLogo() {
   if (!estado.logo) estado.logo = await cargarLogo(LOGO_SABER);
 }
 
-// Revisa la eleccion de series cada vez que algo cambia
-function revisar() {
-  $('caja-materia-otra').hidden = $('materia').value !== 'otra';
-  for (const t of ORDEN) {
-    const marcada = $('s-' + t).checked, puntos = puntosDe(t);
-    $('caja-' + t).classList.toggle('activa', marcada);
-    const pl = plan(t, puntos), d = $('d-' + t);
-    d.classList.toggle('mal', !pl);
-    d.textContent = !pl ? 'No cuadra con esos puntos' : t === 'dibujo' ? `Dibujo de 2 puntos y ${pl.n} partes de 1 punto`
-      : `${pl.n} ${t === 'ordenar' ? 'pasos' : t === 'clasificar' ? 'elementos' : 'preguntas'} de ${pts(pl.valor)}`;
-    const lista = valores(t), caja = document.querySelector(`[data-serie="${t}"]`);
-    caja.querySelector('[data-paso="-1"]').disabled = puntos <= lista[0];
-    caja.querySelector('[data-paso="1"]').disabled = puntos >= lista[lista.length - 1];
-  }
-  for (const [campo, lista] of [['hojas', [1, 2, 3, 4]], ['total', TOTALES]]) {
-    const caja = document.querySelector(`[data-campo="${campo}"]`), v = +$(campo).textContent;
-    caja.querySelector('[data-paso="-1"]').disabled = v <= lista[0];
-    caja.querySelector('[data-paso="1"]').disabled = v >= lista[lista.length - 1];
-  }
-  const el = eleccion(), suma = el.reduce((a, e) => a + e.puntos, 0);
-  const malos = revisarEleccion(el, total(), hojas());
-  $('suma').textContent = malos.length ? malos.join(' ') : `Suma ${suma} de ${total()} puntos, ${el.length} series en ${hojas()} hoja${hojas() > 1 ? 's' : ''}.`;
-  $('suma').className = 'suma ' + (malos.length ? 'mal' : 'bien');
-  $('repartir').hidden = suma === total();
-  const n = $('texto').value.trim().length;
-  $('cuenta').textContent = n ? `${n.toLocaleString('es')} letras` : '';
-  return malos;
-}
-
 async function subirArchivos(e) {
   const files = [...e.target.files];
   e.target.value = '';
@@ -208,7 +404,7 @@ async function subirArchivos(e) {
   if (partes.length) {
     const actual = $('texto').value.trim();
     $('texto').value = (actual ? actual + '\n\n' : '') + partes.join('\n\n');
-    revisar(); guardar();
+    textoCambio(true); revisar(); guardar();
   }
 }
 
@@ -221,7 +417,9 @@ function ponerEjemplo() {
     $('s-' + t).checked = t in EJEMPLO.series;
     if (t in EJEMPLO.series) $('p-' + t).textContent = EJEMPLO.series[t];
   }
-  revisar(); guardar();
+  estado.quitadas.clear(); estado.fijadas = {};
+  clearTimeout(estado.espera);
+  medirTexto(); acomodar({}); revisar(); guardar();
 }
 
 // ===========================================================================
@@ -237,19 +435,47 @@ function aviso(texto, malo) {
 
 async function crear() {
   $('mensajes').innerHTML = '';
-  const d = datos(), el = eleccion(), texto = $('texto').value.trim();
+  const d = datos(), texto = $('texto').value.trim();
+  if (!d.materia) { aviso('Escriba cuál es la materia.', true); return; }
+  if (texto.length < 200) { aviso('Falta el contenido de las clases (paso 2).', true); return; }
+  // por si pego texto hace un momento, se mide y se acomoda ya
+  clearTimeout(estado.espera);
+  medirTexto(); acomodar({});
   const malos = revisar();
-  if (!d.materia) malos.unshift('Escriba cuál es la materia.');
-  if (texto.length < 200) malos.unshift('Falta el contenido de las clases (paso 2).');
   if (malos.length) { aviso(malos.join('\n'), true); return; }
   $('crear').disabled = true;
   try {
     await ponerLogo();
-    estado.parcial = parcialBasico(d, texto, el);
+    estado.parcial = parcialBasico(datos(), texto, eleccion());
     mostrar();
+    // si no cabe en las hojas, se prueba otra mezcla de series y despues una hoja mas
+    if (!estado.mx.cabe) {
+      const quiero = new Set(eleccion().map(e => e.tipo)), H = hojas(), T = total();
+      // primero las mezclas donde ninguna respuesta se ve en otra serie
+      const limpias = l => l.map(c => ({ c, r: sale(c) })).filter(x => x.r).sort((a, b) => b.r - a.r).map(x => x.c);
+      const otras = limpias(candidatos(H, T, quiero).slice(0, 12)).slice(0, 8);
+      for (const H2 of [H + 1, H + 2].filter(x => x <= 4)) otras.push(...limpias(candidatos(H2, T, quiero).slice(0, 8).map(c => ({ ...c, H: H2 }))).slice(0, 3));
+      for (const c of otras) {
+        const antes = { H: hojas(), el: eleccion() };
+        $('hojas').textContent = c.H || H;
+        for (const t of ORDEN) { const i = c.S.indexOf(t); $('s-' + t).checked = i >= 0; if (i >= 0) $('p-' + t).textContent = c.valores[i]; }
+        estado.parcial = parcialBasico(datos(), texto, eleccion());
+        mostrar();
+        if (estado.mx.cabe) {
+          estado.avisosPlan = [c.H ? `No cabía en ${H} hoja${H > 1 ? 's' : ''}, se pasó a ${c.H}.` : `No cabía en ${H} hoja${H > 1 ? 's' : ''}, se cambiaron las series para que quepa.`];
+          $('avisos').insertAdjacentHTML('afterbegin', `<li>${esc(estado.avisosPlan[0])}</li>`);
+          break;
+        }
+        $('hojas').textContent = antes.H;
+        for (const t of ORDEN) { const e = antes.el.find(x => x.tipo === t); $('s-' + t).checked = !!e; if (e) $('p-' + t).textContent = e.puntos; }
+      }
+      if (!estado.mx.cabe) { estado.parcial = parcialBasico(datos(), texto, eleccion()); mostrar(); }
+      revisar(); guardar();
+    }
     $('mensajes').innerHTML = '';
     $('resultado').scrollIntoView({ behavior: 'smooth' });
   } catch (err) {
+    $('resultado').hidden = true;                 // que no quede a la vista un examen viejo
     aviso(err.message, true);
   } finally {
     $('crear').disabled = false;
