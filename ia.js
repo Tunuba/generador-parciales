@@ -12,7 +12,9 @@ const PROVEEDORES = {
 };
 
 function errorConexion(cfg, detalle) {
-  const e = new Error(`No se pudo conectar con ${cfg.url}. ${detalle || 'Revise que la IA esté abierta, que su servidor esté encendido y que acepte conexiones de esta página.'}`);
+  const e = new Error(`No se pudo conectar con ${cfg.url}. ${detalle || (/localhost|127\.0\.0\.1/.test(cfg.url)
+    ? 'Revise que la IA esté abierta con su servidor encendido y que acepte conexiones de esta página. Si el navegador preguntó por la red local, tiene que darle Permitir (se cambia en el candado junto a la dirección).'
+    : 'Revise la dirección, la clave y su conexión a internet.')}`);
   e.conexion = true;
   return e;
 }
