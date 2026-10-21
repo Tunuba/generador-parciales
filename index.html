@@ -20,18 +20,25 @@
   <section class="paso" id="paso-datos">
     <h2><span>1</span> Datos del examen</h2>
     <div class="rejilla">
-      <label class="doble">Colegio <input id="colegio" placeholder="Centro Educativo ..."></label>
-      <label>Materia <input id="materia" placeholder="Ciencias Naturales"></label>
-      <label>Grado <input id="grado" list="grados" placeholder="Cuarto Primaria"></label>
-      <label>Examen <input id="examen" placeholder="Primer Parcial Bloque 4"></label>
+      <label class="doble">Colegio <select id="colegio">
+        <option>Centro Educativo Integral El Saber No.1</option>
+        <option>Centro Educativo Integral El Saber No.2</option>
+        <option value="otro">Otro colegio</option></select></label>
+      <label class="doble" id="caja-colegio-otro" hidden>Nombre del colegio <input id="colegio-otro" placeholder="Centro Educativo ..."></label>
+      <label class="doble" id="caja-logo" hidden>Logo del colegio <input id="logo" type="file" accept="image/png,image/jpeg"><small id="logo-estado">Opcional</small></label>
+      <label>Materia <select id="materia"></select></label>
+      <label id="caja-materia-otra" hidden>¿Cuál materia? <input id="materia-otra"></label>
+      <label>Grado <select id="grado"></select></label>
+      <label>Examen <select id="tipo-examen">
+        <option>Primer Parcial</option><option>Segundo Parcial</option><option>Tercer Parcial</option><option>Examen Final</option></select></label>
+      <label>Bloque <select id="bloque">
+        <option>Primer Bloque</option><option>Segundo Bloque</option><option>Tercer Bloque</option><option selected>Cuarto Bloque</option></select></label>
       <label>Profesor <input id="profesor" placeholder="Nombre y apellido"></label>
-      <label>Ciclo <input id="ciclo" inputmode="numeric"></label>
-      <label>Logo del colegio <input id="logo" type="file" accept="image/png,image/jpeg"><small id="logo-estado">Opcional</small></label>
+      <label>Ciclo <span class="fijo">2027</span></label>
       <label>Tamaño de hoja <select id="hoja"><option value="oficio">Oficio</option><option value="carta">Carta</option></select></label>
-      <label>Hojas del examen <select id="hojas"><option>1</option><option selected>2</option><option>3</option><option>4</option></select></label>
-      <label>Punteo total <input id="total" type="number" min="5" max="100" value="30"></label>
+      <div class="campo">Hojas del examen <div class="contador-num" data-campo="hojas"><button type="button" data-paso="-1" aria-label="Menos hojas">−</button><output id="hojas">1</output><button type="button" data-paso="1" aria-label="Más hojas">+</button></div></div>
+      <div class="campo">Punteo total <div class="contador-num" data-campo="total"><button type="button" data-paso="-1" aria-label="Menos puntos">−</button><output id="total">30</output><button type="button" data-paso="1" aria-label="Más puntos">+</button></div></div>
     </div>
-    <datalist id="grados"></datalist>
   </section>
 
   <section class="paso" id="paso-texto">
@@ -49,32 +56,9 @@
 
   <section class="paso" id="paso-series">
     <h2><span>3</span> Series</h2>
-    <p class="ayuda">Marque las series y escriba cuántos puntos vale cada una. Van al menos dos series por hoja, y Completar con Parear no van juntas porque preguntan casi lo mismo.</p>
+    <p class="ayuda">Marque las series que quiere. Los puntos se reparten solos y se pueden mover con − y +. Van al menos dos series por hoja, y Completar con Parear no van juntas porque preguntan casi lo mismo.</p>
     <div id="series" class="series"></div>
-    <p class="suma" id="suma"></p>
-  </section>
-
-  <section class="paso" id="paso-motor">
-    <h2><span>4</span> Cómo se arma</h2>
-    <div class="opciones">
-      <label class="opcion"><input type="radio" name="motor" value="basico" checked>
-        <span><b>Básico, sin IA</b> Al instante y sin internet. Saca las preguntas de la forma del texto.</span></label>
-      <label class="opcion"><input type="radio" name="motor" value="ia">
-        <span><b>Con IA conectada</b> Mejor y más flexible. Redacta preguntas de casos y de razonar.</span></label>
-    </div>
-    <div id="panel-ia" class="panel-ia" hidden>
-      <div class="rejilla">
-        <label>IA <select id="proveedor"></select></label>
-        <label class="doble">Dirección <input id="ia-url" spellcheck="false"></label>
-        <label>Modelo <input id="ia-modelo" list="modelos" spellcheck="false"><datalist id="modelos"></datalist></label>
-        <label id="caja-clave">Clave <input id="ia-clave" type="password" autocomplete="off" spellcheck="false"></label>
-      </div>
-      <div class="fila">
-        <button class="secundario" id="probar-ia" type="button">Probar conexión</button>
-        <span id="estado-ia" class="cuenta"></span>
-      </div>
-      <p class="ayuda">La clave se guarda solo en este navegador. Una IA en la computadora (Jan, Ollama o LM Studio) tiene que tener su servidor encendido y permitir conexiones de esta página. La primera vez el navegador pregunta si la página puede usar la red local, hay que darle Permitir.</p>
-    </div>
+    <div class="fila"><p class="suma" id="suma"></p><button class="secundario" id="repartir" type="button">Repartir los puntos</button></div>
   </section>
 
   <div class="crear">
@@ -83,7 +67,7 @@
   </div>
 
   <section class="paso" id="resultado" hidden>
-    <h2><span>5</span> Resultado</h2>
+    <h2><span>4</span> Resultado</h2>
     <ul id="avisos" class="avisos"></ul>
     <div class="pestanas" role="tablist">
       <button role="tab" data-vista="examen" class="activa">Examen</button>
@@ -104,7 +88,7 @@
 
 <footer class="pie ancho">
   <p>La máquina propone y el maestro revisa. Lea el resuelto completo antes de imprimir.</p>
-  <p>Todo se hace en su navegador, el contenido de sus clases no se sube a ningún lado salvo a la IA que usted conecte.</p>
+  <p>Todo se hace en su navegador, el contenido de sus clases no se sube a ningún lado.</p>
 </footer>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
@@ -114,7 +98,6 @@
 <script src="basico.js"></script>
 <script src="hoja.js"></script>
 <script src="word.js"></script>
-<script src="ia.js"></script>
 <script src="archivos.js"></script>
 <script src="ejemplo.js"></script>
 <script src="app.js"></script>

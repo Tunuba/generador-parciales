@@ -13,7 +13,9 @@ function htmlRun(r) {
   if (r.r) st.push('color:#C00000');
   if (r.u) st.push('text-decoration:underline');
   if (r.s) st.push(`font-size:${r.s}pt`);
-  return st.length ? `<span style="${st.join(';')}">${esc(r.t)}</span>` : esc(r.t);
+  // los espacios seguidos se respetan (el recuadro de clasificar los usa para separar)
+  const t = esc(r.t).replace(/ {2,}/g, m => '&nbsp;'.repeat(m.length));
+  return st.length ? `<span style="${st.join(';')}">${t}</span>` : t;
 }
 
 function htmlParrafo(p) {

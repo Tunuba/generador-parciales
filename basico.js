@@ -58,7 +58,20 @@ function concepto(item) {
   return { termino, definicion: mayus(acortar(def)) };
 }
 
+// Lo pegado de Word o PowerPoint a veces junta renglones. Se separan los que traen una
+// lista o un paso numerado despues de muchos espacios, o varios pasos en el mismo renglon.
+function separarRenglones(texto) {
+  return texto.replace(/\u00a0/g, ' ').split(/\r?\n/).flatMap(l => {
+    l = l.replace(/[ \t]{3,}(?=(?:\d{1,2}[.)]|[-•*–·▪●])\s)/g, '\n');
+    return l.split('\n').flatMap(x => {
+      const pasos = x.match(/(?:^|\s)\d{1,2}[.)]\s+[A-ZÁÉÍÓÚÑ¿]/g) || [];
+      return pasos.length >= 2 ? x.split(/\s+(?=\d{1,2}[.)]\s+[A-ZÁÉÍÓÚÑ¿])/) : [x];
+    });
+  }).join('\n');
+}
+
 function analizar(texto) {
+  texto = separarRenglones(texto);
   const secciones = [];
   let actual = { titulo: '', listas: [], parrafos: [] }, lista = null;
   secciones.push(actual);
@@ -360,13 +373,33 @@ function parcialBasico(datos, contenido, eleccion) {
       fallas.push(`${SERIES[tipo].nombre}, ${err.message}`);
     }
   }
-  if (fallas.length) {
+  // la serie que no salio se cambia por otra que si salga con los mismos puntos
+  const cambios = [];
+  for (const e of eleccion) {
+    if (hechas[e.tipo]) continue;
+    const usadas = eleccion.map(x => hechas[x.tipo] ? x.tipo : null).concat(Object.keys(hechas));
+    const otras = turno.filter(t => !usadas.includes(t) && !eleccion.some(x => x.tipo === t) && plan(t, e.puntos) &&
+      !(t === 'completar' && usadas.includes('parear')) && !(t === 'parear' && usadas.includes('completar')));
+    for (const t of otras) {
+      const { n, valor } = plan(t, e.puntos);
+      try {
+        hechas[t] = { tipo: t, puntos: e.puntos, valor, ...revisarSerie(t, constructores[t](n), n) };
+        cambios.push(`${SERIES[e.tipo].nombre} no se pudo armar con este texto y se cambió por ${SERIES[t].nombre}.`);
+        e.cambiada = t;
+        break;
+      } catch (err) { /* se prueba la siguiente */ }
+    }
+  }
+  const sinArmar = eleccion.filter(e => !hechas[e.tipo] && !e.cambiada);
+  if (sinArmar.length) {
     const e = new Error('Con este texto el modo básico no pudo armar todo.\n- ' + fallas.join('\n- ') +
-      '\nCambie esas series por otras, bájeles puntos, agregue más contenido o conecte una IA.');
+      '\nAgregue más contenido, bájeles puntos a esas series.');
     e.fallas = fallas;
     throw e;
   }
-  for (const e of ordenar(eleccion)) series.push(hechas[e.tipo]);
+  const finales = eleccion.map(e => ({ tipo: e.cambiada || e.tipo, puntos: e.puntos }));
+  eleccion.forEach(e => delete e.cambiada);
+  for (const e of ordenar(finales)) series.push(hechas[e.tipo]);
 
   const puntos = [];
   for (const s of A.secciones) if (s.titulo && (s.parrafos.length || s.listas.length) && puntos.length < 6)
@@ -377,7 +410,7 @@ function parcialBasico(datos, contenido, eleccion) {
     const pr = hechas.ordenar.proceso;
     puntos.push(/^etapas|^fases/i.test(pr) ? `Practicar el orden de las ${minus(pr)}.` : /^pasos/i.test(pr) ? `Practicar el orden de los ${minus(pr)}.` : `Practicar el orden de ${minus(pr)}.`);
   }
-  return { datos, series, temario: { puntos: puntos.slice(0, 9) }, semilla: Math.floor(Math.random() * 1e6), modo: 'basico' };
+  return { datos, series, temario: { puntos: puntos.slice(0, 9) }, semilla: Math.floor(Math.random() * 1e6), modo: 'basico', cambios };
 }
 
 // barajar sin semilla para escoger opciones incorrectas

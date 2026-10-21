@@ -18,7 +18,11 @@ const ETIQUETAS = ['Primera', 'Segunda', 'Tercera', 'Cuarta', 'Quinta', 'Sexta',
 
 const GRADOS = ['Primero Primaria', 'Segundo Primaria', 'Tercero Primaria', 'Cuarto Primaria',
   'Quinto Primaria', 'Sexto Primaria', 'Primero Básico', 'Segundo Básico', 'Tercero Básico',
-  'Cuarto Diversificado', 'Quinto Diversificado', 'Sexto Diversificado'];
+  'Cuarto Perito', 'Cuarto Secretariado', 'Cuarto Bachillerato', 'Cuarto Diseño',
+  'Quinto Perito', 'Quinto Secretariado', 'Quinto Bachillerato', 'Quinto Diseño', 'Sexto Perito'];
+const MATERIAS = ['Matemáticas', 'Comunicación y Lenguaje', 'Ciencias Naturales', 'Ciencias Sociales',
+  'Medio Social y Natural', 'Inglés', 'Robótica', 'Computación', 'Expresión Artística', 'Formación Ciudadana',
+  'Educación Física', 'Física', 'Química', 'Biología', 'Contabilidad', 'Productividad y Desarrollo'];
 
 // Cuantas preguntas lleva una serie y cuanto vale cada una, o null si no cuadra
 function plan(tipo, puntos) {
