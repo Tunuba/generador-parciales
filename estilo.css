@@ -96,7 +96,7 @@ button:hover, .boton:hover { border-color: var(--azul-2); }
 
 /* La hoja de examen se ve igual en los dos temas: es papel */
 .vista { background: #8a94a6; border-radius: 10px; padding: 18px 0; overflow-x: auto; }
-.hoja { background: #fff; color: #000; width: 8.5in; margin: 0 auto 18px; padding: .5in; box-shadow: 0 2px 10px rgba(0,0,0,.25); }
+.hoja { background: #fff; color: #000; width: 8.5in; margin: 0 auto 18px; padding: .5in; box-shadow: 0 2px 10px rgba(0,0,0,.25); zoom: var(--escala, 1); }
 .hoja.oficio { height: 12.5in; }
 .hoja.carta { height: 11in; }
 .hoja-texto { font: 12pt/1.15 Arial, "Liberation Sans", Arimo, Helvetica, sans-serif; color: #000; width: 7.5in; }
@@ -115,7 +115,6 @@ button:hover, .boton:hover { border-color: var(--azul-2); }
   .series, .opciones { grid-template-columns: 1fr; }
   .cabecera h1 { font-size: 24px; }
   .vista { padding: 10px 0; }
-  .hoja { zoom: .45; }
 }
 
 @media print {

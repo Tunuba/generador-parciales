@@ -239,9 +239,17 @@ function pintar() {
     const res = estado.vista === 'resuelto';
     v.innerHTML = htmlHojas(estado.m, res, estado.logo, res ? estado.mres : estado.mx);
   }
+  escalar();
   $('bajar-word').textContent = estado.vista === 'resuelto' ? 'Descargar Word del resuelto' : 'Descargar Word del examen';
   $('bajar-word').hidden = estado.vista === 'temario';
 }
+
+// en pantallas angostas la hoja se achica para verse entera
+function escalar() {
+  const v = $('vista');
+  v.style.setProperty('--escala', Math.min(1, (v.clientWidth - 16) / 816).toFixed(3));
+}
+addEventListener('resize', () => { if (!$('resultado').hidden) escalar(); });
 
 function nombreArchivo(que) {
   const d = estado.m.datos;
