@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Generador de parciales</title>
+<meta name="description" content="Pegue el contenido de sus clases y obtenga el examen, el resuelto y el temario listos para imprimir.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='5' y='3' width='22' height='26' rx='3' fill='%23193c6e'/%3E%3Cpath d='M10 11h12M10 16h12M10 21h7' stroke='white' stroke-width='2.5' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="estilo.css">
+</head>
+<body>
+<header class="cabecera">
+  <div class="ancho">
+    <h1>Generador de parciales</h1>
+    <p>Pegue el contenido de sus clases, elija las series y obtenga el examen, el resuelto y el temario listos para imprimir.</p>
+  </div>
+</header>
+
+<main class="ancho">
+  <section class="paso" id="paso-datos">
+    <h2><span>1</span> Datos del examen</h2>
+    <div class="rejilla">
+      <label class="doble">Colegio <input id="colegio" placeholder="Centro Educativo ..."></label>
+      <label>Materia <input id="materia" placeholder="Ciencias Naturales"></label>
+      <label>Grado <input id="grado" list="grados" placeholder="Cuarto Primaria"></label>
+      <label>Examen <input id="examen" placeholder="Primer Parcial Bloque 4"></label>
+      <label>Profesor <input id="profesor" placeholder="Nombre y apellido"></label>
+      <label>Ciclo <input id="ciclo" inputmode="numeric"></label>
+      <label>Logo del colegio <input id="logo" type="file" accept="image/png,image/jpeg"><small id="logo-estado">Opcional</small></label>
+      <label>Tamaño de hoja <select id="hoja"><option value="oficio">Oficio</option><option value="carta">Carta</option></select></label>
+      <label>Hojas del examen <select id="hojas"><option>1</option><option selected>2</option><option>3</option><option>4</option></select></label>
+      <label>Punteo total <input id="total" type="number" min="5" max="100" value="30"></label>
+    </div>
+    <datalist id="grados"></datalist>
+  </section>
+
+  <section class="paso" id="paso-texto">
+    <h2><span>2</span> Contenido de las clases</h2>
+    <p class="ayuda">Pegue el texto de sus presentaciones o súbalas. Sirve mejor si los conceptos van en lista, uno por renglón, así
+      <em>Evaporación. El calor del Sol convierte el agua en vapor.</em> Los pasos de un procedimiento van numerados.</p>
+    <textarea id="texto" rows="12" placeholder="Pegue aquí el contenido de sus clases"></textarea>
+    <div class="fila">
+      <label class="boton secundario">Subir archivos <input id="archivos" type="file" multiple accept=".txt,.md,.docx,.pptx,.pdf" hidden></label>
+      <button class="secundario" id="ejemplo" type="button">Probar con un ejemplo</button>
+      <button class="secundario" id="borrar-texto" type="button">Borrar</button>
+      <span class="cuenta" id="cuenta"></span>
+    </div>
+  </section>
+
+  <section class="paso" id="paso-series">
+    <h2><span>3</span> Series</h2>
+    <p class="ayuda">Marque las series y escriba cuántos puntos vale cada una. Van al menos dos series por hoja, y Completar con Parear no van juntas porque preguntan casi lo mismo.</p>
+    <div id="series" class="series"></div>
+    <p class="suma" id="suma"></p>
+  </section>
+
+  <section class="paso" id="paso-motor">
+    <h2><span>4</span> Cómo se arma</h2>
+    <div class="opciones">
+      <label class="opcion"><input type="radio" name="motor" value="basico" checked>
+        <span><b>Básico, sin IA</b> Al instante y sin internet. Saca las preguntas de la forma del texto.</span></label>
+      <label class="opcion"><input type="radio" name="motor" value="ia">
+        <span><b>Con IA conectada</b> Mejor y más flexible. Redacta preguntas de casos y de razonar.</span></label>
+    </div>
+    <div id="panel-ia" class="panel-ia" hidden>
+      <div class="rejilla">
+        <label>IA <select id="proveedor"></select></label>
+        <label class="doble">Dirección <input id="ia-url" spellcheck="false"></label>
+        <label>Modelo <input id="ia-modelo" list="modelos" spellcheck="false"><datalist id="modelos"></datalist></label>
+        <label id="caja-clave">Clave <input id="ia-clave" type="password" autocomplete="off" spellcheck="false"></label>
+      </div>
+      <div class="fila">
+        <button class="secundario" id="probar-ia" type="button">Probar conexión</button>
+        <span id="estado-ia" class="cuenta"></span>
+      </div>
+      <p class="ayuda">La clave se guarda solo en este navegador. Una IA en la computadora (Jan, Ollama o LM Studio) tiene que tener su servidor encendido y permitir conexiones de esta página.</p>
+    </div>
+  </section>
+
+  <div class="crear">
+    <button id="crear" class="principal" type="button">Crear examen</button>
+    <div id="mensajes" class="mensajes" role="status"></div>
+  </div>
+
+  <section class="paso" id="resultado" hidden>
+    <h2><span>5</span> Resultado</h2>
+    <ul id="avisos" class="avisos"></ul>
+    <div class="pestanas" role="tablist">
+      <button role="tab" data-vista="examen" class="activa">Examen</button>
+      <button role="tab" data-vista="resuelto">Resuelto</button>
+      <button role="tab" data-vista="temario">Temario</button>
+    </div>
+    <div class="fila acciones">
+      <button class="principal" id="bajar-word" type="button">Descargar Word</button>
+      <button class="secundario" id="imprimir" type="button">Imprimir o guardar PDF</button>
+      <button class="secundario" id="bajar-temario" type="button">Descargar temario</button>
+      <button class="secundario" id="mezclar" type="button">Mezclar otra vez</button>
+      <button class="secundario" id="guardar" type="button">Guardar para después</button>
+      <label class="boton secundario">Abrir guardado <input id="abrir" type="file" accept=".json" hidden></label>
+    </div>
+    <div id="vista" class="vista"></div>
+  </section>
+</main>
+
+<footer class="pie ancho">
+  <p>La máquina propone y el maestro revisa. Lea el resuelto completo antes de imprimir.</p>
+  <p>Todo se hace en su navegador, el contenido de sus clases no se sube a ningún lado salvo a la IA que usted conecte.</p>
+</footer>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://unpkg.com/docx@8.5.0/build/index.umd.js"></script>
+<script src="motor.js"></script>
+<script src="basico.js"></script>
+<script src="hoja.js"></script>
+<script src="word.js"></script>
+<script src="ia.js"></script>
+<script src="archivos.js"></script>
+<script src="ejemplo.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
