@@ -229,7 +229,8 @@ function revisarSerie(tipo, x, n) {
     return { pares: out, trampas };
   }
   if (tipo === 'ordenar') {
-    const pasos = textos(x.pasos);
+    // si la IA numero los pasos, el numero regalaria la respuesta
+    const pasos = textos(x.pasos).map(p => p.replace(/^(paso\s*)?\d{1,2}\s*[.):-]\s*/i, '')).filter(Boolean);
     if (pasos.length < n) throw new Error(`pedí ${n} pasos y vinieron ${pasos.length}`);
     unicos(pasos.slice(0, n), 'pasos');
     return { proceso: limpio(x.proceso) || 'Pasos del proceso', pasos: pasos.slice(0, n) };
@@ -300,36 +301,68 @@ function parcialDePegado(datos, eleccion, texto) {
 function parecidas(a, b) {
   const pal = s => new Set(normal(s).split(/[^a-zñ0-9]+/).filter(w => w.length > 3));
   const A = pal(a), B = pal(b);
-  if (A.size < 3 || B.size < 3) return false;
+  if (A.size < 4 || B.size < 4) return false;
   let comun = 0;
   for (const w of A) if (B.has(w)) comun++;
-  return comun / Math.min(A.size, B.size) >= 0.75;
+  return comun / Math.min(A.size, B.size) >= 0.85;
 }
 
 // Arma el parcial preguntando serie por serie a una IA conectada
-async function parcialConIA(datos, contenido, eleccion, preguntar, avisar) {
-  const series = [], ya = [];
+// Pide una serie de n preguntas, con reintentos. Devuelve la serie revisada.
+async function unaSerie(datos, contenido, tipo, n, preguntar, avisar, ya) {
+  let error = null, x = null, reserva = null;
+  for (let intento = 0; intento < 4 && !x; intento++) {
+    // por repetir se pide otra vez una sola vez, despues se queda la que haya
+    if (reserva && intento >= 2) break;
+    const [inst, forma] = pedidoSerie(tipo, n);
+    try {
+      const cand = revisarSerie(tipo, await preguntar(sistema(datos), mensaje(contenido, inst, forma, error, ya), forma), n);
+      const propias = resumen(tipo, cand);
+      const repetidas = propias.filter(r => ya.some(y => parecidas(r, y)));
+      // en las series de conceptos es normal que se repita alguno, se rechaza solo si repite casi todo
+      const tope = ['parear', 'clasificar', 'dibujo', 'ordenar'].includes(tipo) ? propias.length / 2 : Math.max(1, Math.floor(propias.length / 4));
+      reserva = cand;
+      if (repetidas.length > tope) throw new Error(`repite lo que ya está en el examen, ${repetidas[0]}. Escriba preguntas de otros temas`);
+      x = cand;
+    } catch (err) {
+      if (err.conexion) throw err;
+      error = err.message;
+      avisar(`   la IA se equivocó (${error}), se le pide otra vez`);
+    }
+  }
+  // si solo fallo por repetir, se queda la ultima que sirvio y el aviso de cruces lo dice
+  if (!x && reserva) { x = reserva; avisar(`   ${SERIES[tipo].nombre} se quedó con algo repetido, revísela`); }
+  if (!x) throw new Error(`La IA no pudo armar ${SERIES[tipo].nombre}. Pruebe otra vez o use otra IA.`);
+  return x;
+}
+
+// Las listas de cada serie que se pueden pedir por partes y despues juntar
+const PARTIBLES = { seleccion: 'preguntas', vf: 'afirmaciones', abiertas: 'preguntas' };
+
+// trozo = cuantas preguntas caben en una respuesta de la IA (la gratis corta las respuestas largas)
+async function parcialConIA(datos, contenido, eleccion, preguntar, avisar, previas, trozo = 99) {
+  const series = [], ya = [...(previas || [])];
   for (const e of ordenar(eleccion)) {
     const { n, valor } = plan(e.tipo, e.puntos);
     avisar(`${SERIES[e.tipo].nombre}, ${n} de ${valor} punto${valor > 1 ? 's' : ''} cada una`);
-    let error = null, x = null;
-    for (let intento = 0; intento < 4 && !x; intento++) {
-      const [inst, forma] = pedidoSerie(e.tipo, n);
-      try {
-        const cand = revisarSerie(e.tipo, await preguntar(sistema(datos), mensaje(contenido, inst, forma, error, ya), forma), n);
-        const repetidas = resumen(e.tipo, cand).filter(r => ya.some(y => parecidas(r, y)));
-        if (repetidas.length) throw new Error(`repite lo que ya está en el examen, ${repetidas[0]}. Escriba preguntas de otros temas`);
-        x = cand;
-      } catch (err) {
-        if (err.conexion) throw err;
-        error = err.message;
-        avisar(`   la IA se equivocó (${error}), se le pide otra vez`);
+    let x;
+    const lista = PARTIBLES[e.tipo];
+    if (lista && n > trozo) {
+      // se juntan las partes sin repetidas y se pide lo que falte
+      const llave = q => normal(q.pregunta || q.texto || q.oracion || q.concepto || '');
+      let items = [], ultima = null;
+      for (let vuelta = 0; vuelta < 5 && items.length < n; vuelta++) {
+        const k = Math.min(trozo, n - items.length);
+        ultima = await unaSerie(datos, contenido, e.tipo, k, preguntar, avisar, [...ya, ...resumen(e.tipo, { [lista]: items })]);
+        for (const q of ultima[lista]) if (!items.some(o => llave(o) === llave(q))) items.push(q);
       }
-    }
-    if (!x) throw new Error(`La IA no pudo armar ${SERIES[e.tipo].nombre}. Pruebe otra vez o use otra IA.`);
+      if (items.length < n) throw new Error(`La IA no pudo armar ${SERIES[e.tipo].nombre} sin repetir. Pruebe otra vez.`);
+      x = revisarSerie(e.tipo, { ...ultima, [lista]: items.slice(0, n) }, n);
+    } else x = await unaSerie(datos, contenido, e.tipo, n, preguntar, avisar, ya);
     series.push({ tipo: e.tipo, puntos: e.puntos, valor, ...x });
     ya.push(...resumen(e.tipo, x));
   }
+  if (previas) return { series };
   avisar('Temario');
   let temario = { puntos: [] }, error = null;
   for (let intento = 0; intento < 3 && !temario.puntos.length; intento++) {

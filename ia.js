@@ -2,6 +2,8 @@
 // en la computadora (Jan, Ollama, LM Studio) y las de internet con clave (Groq, Gemini, OpenAI).
 
 const PROVEEDORES = {
+  gratis:   { nombre: 'IA gratis por internet, sin clave', url: 'https://text.pollinations.ai/openai', modelo: 'openai-fast', clave: false, sinLista: true,
+              sinEsquema: true, extra: { reasoning_effort: 'low' } },
   jan:      { nombre: 'Jan, en esta computadora', url: 'http://localhost:1337/v1', modelo: '', clave: false },
   ollama:   { nombre: 'Ollama, en esta computadora', url: 'http://localhost:11434/v1', modelo: 'qwen3:8b', clave: false },
   lmstudio: { nombre: 'LM Studio, en esta computadora', url: 'http://localhost:1234/v1', modelo: '', clave: false },
@@ -33,6 +35,11 @@ async function llamar(cfg, ruta, cuerpo) {
 }
 
 async function listarModelos(cfg) {
+  if (cfg.sinLista) {                     // no publica su lista, se prueba con un pedido corto
+    const r = await llamar(cfg, '/chat/completions', { model: cfg.modelo, messages: [{ role: 'user', content: 'Responda solo ok' }] });
+    if (!r.ok) throw errorConexion(cfg, `La IA contestó con error ${r.status}.`);
+    return [cfg.modelo];
+  }
   const r = await llamar(cfg, '/models');
   if (!r.ok) throw errorConexion(cfg, `La IA contestó con error ${r.status}.`);
   const j = await r.json();
@@ -44,10 +51,11 @@ async function listarModelos(cfg) {
 async function preguntarIA(cfg, sis, usu, forma) {
   const qwen = /qwen3/i.test(cfg.modelo || '');
   const base = {
-    model: cfg.modelo, temperature: 0.5, stream: false,
+    model: cfg.modelo, temperature: 0.5, stream: false, ...(cfg.extra || {}),
     messages: [{ role: 'system', content: sis }, { role: 'user', content: usu + (qwen ? '\n/no_think' : '') }],
   };
-  const formas = [
+  // la IA gratis piensa demasiado con el esquema y se queda sin espacio para contestar
+  const formas = cfg.sinEsquema ? [{}] : [
     { response_format: { type: 'json_schema', json_schema: { name: 'serie', schema: esquema(forma) } } },
     { response_format: { type: 'json_object' } },
     {},
@@ -58,10 +66,21 @@ async function preguntarIA(cfg, sis, usu, forma) {
     if (r.status === 400 || r.status === 422) { ultimo = await r.text(); continue; }
     if (r.status === 401 || r.status === 403) throw errorConexion(cfg, 'La clave no sirve o no tiene permiso.');
     if (r.status === 404) throw errorConexion(cfg, `No existe el modelo ${cfg.modelo} o la dirección está mal.`);
-    if (r.status === 429) throw errorConexion(cfg, 'Se pasó el límite de uso de esa IA, espere un minuto.');
+    if (r.status === 429 || r.status === 402) {   // la gratis da una respuesta cada 30 s por red, se espera y se repite
+      const t = await r.text();
+      const seg = +((t.match(/after (\d+)s/i) || [])[1] || 15) + 2;
+      if (r.status === 402 && !/FREE_LIMIT|limit/i.test(t)) throw errorConexion(cfg, 'Esa IA pide pago.');
+      if ((cfg.esperas = (cfg.esperas || 0) + 1) <= 8) {
+        if (cfg.alEsperar) cfg.alEsperar(seg);
+        await new Promise(ok => setTimeout(ok, seg * 1000));
+        return preguntarIA(cfg, sis, usu, forma);
+      }
+      throw errorConexion(cfg, 'Se pasó el límite de uso de esa IA, espere un minuto.');
+    }
     if (!r.ok) throw errorConexion(cfg, `La IA contestó con error ${r.status}.`);
     const j = await r.json();
     const texto = j.choices && j.choices[0] && j.choices[0].message ? j.choices[0].message.content : '';
+    cfg.esperas = 0;
     return sacarJson(texto);
   }
   throw errorConexion(cfg, 'La IA no aceptó el pedido. ' + ultimo.slice(0, 200));

@@ -55,7 +55,7 @@ function iniciar() {
   if (g.texto) $('texto').value = g.texto;
   if (g.motor === 'ia') document.querySelector('input[value="ia"]').checked = true;
   estado.ia = g.ia || {};
-  $('proveedor').value = g.proveedor || 'jan';
+  $('proveedor').value = g.proveedor || 'gratis';
   ponerProveedor(false);
   if (g.logo) cargarLogo(g.logo);
 
@@ -160,7 +160,7 @@ function ponerEjemplo() {
 }
 
 async function probarIA() {
-  const cfg = { url: $('ia-url').value, modelo: $('ia-modelo').value, clave: $('ia-clave').value };
+  const cfg = { url: $('ia-url').value, modelo: $('ia-modelo').value, clave: $('ia-clave').value, sinLista: !!PROVEEDORES[$('proveedor').value].sinLista };
   $('estado-ia').textContent = 'Probando';
   try {
     const modelos = await listarModelos(cfg);
@@ -196,9 +196,13 @@ async function crear() {
     if (motor() === 'basico') {
       estado.parcial = parcialBasico(d, texto, el);
     } else {
-      const cfg = { url: $('ia-url').value, modelo: $('ia-modelo').value, clave: $('ia-clave').value };
-      aviso('Preguntando a la IA, una serie a la vez. Puede tardar uno o dos minutos.');
-      estado.parcial = await parcialConIA(d, texto.slice(0, 30000), el, (s, u, f) => preguntarIA(cfg, s, u, f), aviso);
+      const prov = PROVEEDORES[$('proveedor').value];
+      const cfg = { ...prov, url: $('ia-url').value, modelo: $('ia-modelo').value, clave: $('ia-clave').value,
+        alEsperar: seg => aviso(`   la IA gratis da una respuesta cada 30 segundos, esperando ${seg} segundos`) };
+      const preguntar = (s, u, f) => preguntarIA(cfg, s, u, f);
+      aviso(prov.sinLista ? 'Preguntando a la IA gratis, una serie a la vez. Da una respuesta cada 30 segundos, así que tarda de 3 a 5 minutos.'
+        : 'Preguntando a la IA, una serie a la vez. Puede tardar uno o dos minutos.');
+      estado.parcial = await parcialConIA(d, texto.slice(0, prov.sinLista ? 12000 : 30000), el, preguntar, aviso, null, prov.sinLista ? 4 : 99);
     }
     mostrar();
     $('mensajes').innerHTML = '';
