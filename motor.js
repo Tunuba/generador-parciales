@@ -16,7 +16,7 @@ const SERIES = {
 const ORDEN = Object.keys(SERIES);
 const ETIQUETAS = ['Primera', 'Segunda', 'Tercera', 'Cuarta', 'Quinta', 'Sexta', 'Séptima', 'Octava'];
 
-const GRADOS = ['Primero Primaria', 'Segundo Primaria', 'Tercero Primaria', 'Cuarto Primaria',
+const GRADOS = ['Pre-Kinder', 'Kinder', 'Preparatoria', 'Primero Primaria', 'Segundo Primaria', 'Tercero Primaria', 'Cuarto Primaria',
   'Quinto Primaria', 'Sexto Primaria', 'Primero Básico', 'Segundo Básico', 'Tercero Básico',
   'Cuarto Perito', 'Cuarto Secretariado', 'Cuarto Bachillerato', 'Cuarto Diseño',
   'Quinto Perito', 'Quinto Secretariado', 'Quinto Bachillerato', 'Quinto Diseño', 'Sexto Perito'];
@@ -42,7 +42,8 @@ function plan(tipo, puntos) {
   return null;
 }
 
-function revisarEleccion(eleccion, total, hojas) {
+// tope = lo mas que puede valer una serie (en el colegio, 10)
+function revisarEleccion(eleccion, total, hojas, tope) {
   const malos = [];
   const tipos = eleccion.map(e => e.tipo);
   const suma = eleccion.reduce((a, e) => a + e.puntos, 0);
@@ -53,6 +54,7 @@ function revisarEleccion(eleccion, total, hojas) {
   if (eleccion.length < hojas * 2)
     malos.push(`Con ${hojas} hoja${hojas > 1 ? 's' : ''} van al menos ${hojas * 2} series, dos por hoja.`);
   for (const e of eleccion) if (!plan(e.tipo, e.puntos)) malos.push(`${SERIES[e.tipo].nombre} no se puede armar con ${e.puntos} puntos.`);
+  if (tope) for (const e of eleccion) if (e.puntos > tope) malos.push(`${SERIES[e.tipo].nombre} vale ${e.puntos} puntos y cada serie va de ${tope} o menos.`);
   return malos;
 }
 
@@ -62,6 +64,8 @@ function revisarEleccion(eleccion, total, hojas) {
 
 function nivel(grado) {
   const g = (grado || '').toLowerCase();
+  if (/kinder|preparatoria/.test(g))
+    return 'niños de 4 a 6 años que apenas empiezan a leer. Muy pocas palabras por pregunta, palabras que usan en casa y nada que tengan que escribir largo.';
   if (/(primero|segundo|tercero) primaria/.test(g))
     return 'alumnos de 7 a 9 años. Oraciones muy cortas, de menos de 15 palabras, palabras sencillas y nada abstracto.';
   if (g.includes('primaria')) return 'alumnos de 10 a 12 años. Oraciones claras y ejemplos de la vida diaria.';

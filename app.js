@@ -8,11 +8,17 @@ const CICLO = '2027';
 const TOTALES = [10, 15, 20, 25, 30, 35, 40, 50, 60, 100];
 // Lo que se marca al abrir, segun cuantas hojas lleva
 const INICIALES = { 1: ['ordenar', 'parear'], 2: ['ordenar', 'dibujo', 'abiertas', 'seleccion', 'parear'] };
+// con series de 10 o menos, mas series de menos puntos (parcial 3 de 5, final 6 de 5)
+const INICIALES_TOPE = { 1: ['ordenar', 'seleccion', 'parear'], 2: ['ordenar', 'dibujo', 'abiertas', 'vf', 'seleccion', 'parear'] };
+const iniciales = n => new Set((topeSerie() ? INICIALES_TOPE : INICIALES)[n]);
 // Cuanto pesa cada serie al repartir los puntos
 // (abiertas pesa mas porque sus renglones se acomodan al espacio; ordenar y dibujo tienen tope
 // porque casi ninguna clase trae mas de 5 pasos o mas de 4 partes para senalar)
 const PESO = { seleccion: 0.9, abiertas: 1.5, vf: 0.9, completar: 1, parear: 1, clasificar: 1, ordenar: 0.8, dibujo: 0.9 };
 const TOPE = { ordenar: 5, dibujo: 6 };
+// En el colegio ninguna serie pasa de 10 puntos; con eso marcado se reparten cerca de 5 cada una
+const TOPE_SERIE = 10;
+const topeSerie = () => $('tope').checked ? TOPE_SERIE : 0;
 const LOGO_SABER = 'logo-saber.jpg';
 
 const estado = { logo: null, parcial: null, m: null, mres: null, vista: 'examen', capaz: null, quitadas: new Set(), fijadas: {}, avisosPlan: [] };
@@ -21,7 +27,7 @@ function leerGuardado() {
   try { return JSON.parse(localStorage.getItem(CLAVE)) || {}; } catch (e) { return {}; }
 }
 function guardar() {
-  const g = { campos: {}, series: {}, hojas: hojas(), total: total(), pedido: estado.pedido };
+  const g = { campos: {}, series: {}, hojas: hojas(), total: total(), pedido: estado.pedido, tope: $('tope').checked };
   for (const c of CAMPOS) g.campos[c] = $(c).value;
   for (const t of ORDEN) g.series[t] = { marcada: $('s-' + t).checked, puntos: puntosDe(t) };
   g.texto = $('texto').value.length < 200000 ? $('texto').value : '';
@@ -41,7 +47,7 @@ const datos = () => ({
 });
 const eleccion = () => ORDEN.filter(t => $('s-' + t).checked).map(t => ({ tipo: t, puntos: puntosDe(t) }));
 // Los puntos con los que cada serie se puede armar
-const valores = t => Array.from({ length: 60 }, (_, i) => i + 1).filter(p => plan(t, p));
+const valores = t => Array.from({ length: topeSerie() || 60 }, (_, i) => i + 1).filter(p => plan(t, p));
 // Los que ademas salen con el texto pegado (sin texto, todos)
 const sirven = t => valores(t).filter(p => !estado.capaz || estado.capaz[t].has(plan(t, p).n));
 const nombre = t => SERIES[t].nombre;
@@ -72,6 +78,7 @@ function iniciar() {
 
   const campos = g.campos || {};
   for (const c of CAMPOS) if (campos[c]) $(c).value = campos[c];
+  if (g.tope === false) $('tope').checked = false;
   // un guardado viejo con otro colegio deja el selector vacio, vuelve a El Saber No.1
   if (!$('colegio').value) $('colegio').selectedIndex = 0;
   $('hojas').textContent = g.hojas || 1;
@@ -81,7 +88,7 @@ function iniciar() {
   if (g.series) for (const t of ORDEN) {
     $('s-' + t).checked = !!g.series[t].marcada;
     $('p-' + t).textContent = g.series[t].puntos || valores(t)[0];
-  } else for (const t of ORDEN) $('s-' + t).checked = INICIALES[1].includes(t);
+  } else for (const t of ORDEN) $('s-' + t).checked = iniciales(1).has(t);
   if (g.texto) $('texto').value = g.texto;
   ponerLogo();
 
@@ -99,7 +106,14 @@ function iniciar() {
       $('total').textContent = parcial ? 15 : 30;
       estado.pedido = { H: hojas(), T: total() };
       estado.quitadas.clear(); estado.fijadas = {};
-      acomodar({ quiero: new Set(INICIALES[parcial ? 1 : 2]) });
+      acomodar({ quiero: iniciales(parcial ? 1 : 2) });
+    }
+    if (e.target.id === 'tope') {                   // los puntos de cada serie se reparten otra vez
+      estado.fijadas = {};
+      medirTexto();
+      // con tope se buscan mas series de menos puntos, sin quitar las que el maestro ya tenia
+      const quiero = new Set([...eleccion().map(x => x.tipo), ...(e.target.checked ? iniciales(Math.min(2, hojas())) : [])]);
+      acomodar({ que: 'tope', quiero });
     }
     if (e.target.type === 'checkbox' && e.target.id.startsWith('s-')) {
       const t = e.target.id.slice(2);
@@ -125,6 +139,7 @@ function iniciar() {
   });
   $('archivos').addEventListener('change', subirArchivos);
   $('ejemplo').addEventListener('click', ponerEjemplo);
+  prepararDictado({ boton: $('dictar'), caja: $('texto'), linea: $('oyendo'), alCambiar: () => { textoCambio(); revisar(); guardar(); } });
   $('borrar-texto').addEventListener('click', () => { $('texto').value = ''; textoCambio(true); revisar(); guardar(); });
   $('crear').addEventListener('click', crear);
   document.querySelectorAll('.pestanas button').forEach(b => b.addEventListener('click', () => { estado.vista = b.dataset.vista; pintar(); }));
@@ -135,7 +150,7 @@ function iniciar() {
   $('guardar').addEventListener('click', () => bajar(new Blob([JSON.stringify(estado.parcial, null, 1)], { type: 'application/json' }), nombreArchivo('PARCIAL') + '.json'));
   $('abrir').addEventListener('change', abrirGuardado);
   medirTexto();
-  acomodar({ quiero: g.series ? undefined : new Set(INICIALES[Math.min(2, hojas())]) });
+  acomodar({ quiero: g.series ? undefined : iniciales(Math.min(2, hojas())) });
   revisar(); guardar();
 }
 
@@ -191,7 +206,10 @@ function repartirEn(tipos, T, fijo) {
 // Todas las formas de armar el examen con H hojas y T puntos, la mas parecida a lo marcado primero
 function candidatos(H, T, quiero, { con, sin, fijo } = {}, primero) {
   const disp = ORDEN.filter(t => t !== sin && sirven(t).length);
-  const ideal = H === 1 ? 2 : Math.min(7, Math.round(2.5 * H));
+  // cuantas series quedan bien; con tope, cerca de 5 puntos cada una (30 puntos en 6 series, 15 en 3)
+  const tope = topeSerie();
+  const ideal = !tope ? (H === 1 ? 2 : Math.min(7, Math.round(2.5 * H)))
+    : Math.min(7, Math.max(2 * H, Math.ceil(T / tope), Math.round(T / 5)));
   const out = [];
   for (let mask = 1; mask < 1 << disp.length; mask++) {
     const S = disp.filter((_, i) => mask >> i & 1);
@@ -200,7 +218,8 @@ function candidatos(H, T, quiero, { con, sin, fijo } = {}, primero) {
     const r = repartirEn(S, T, fijo);
     if (!r) continue;
     if (primero) return [{ S, valores: r.valores }];
-    let costo = r.costo + 10 * Math.abs(S.length - ideal);
+    // con tope pesa mas tener las series que tocan, para que queden de unos 5 puntos
+    let costo = r.costo + (tope ? 30 : 10) * Math.abs(S.length - ideal);
     for (const t of ORDEN) {
       if (quiero.has(t) && !S.includes(t)) costo += 30;
       if (!quiero.has(t) && S.includes(t)) costo += estado.quitadas.has(t) ? 60 : 12;
@@ -211,15 +230,35 @@ function candidatos(H, T, quiero, { con, sin, fijo } = {}, primero) {
 }
 const hay = (H, T, quiero, acc) => candidatos(H, T, quiero, acc, true).length > 0;
 
-// Prueba de verdad que el examen sale con el texto, sin cambiar ninguna serie.
-// 2 = sale limpio, 1 = sale pero una respuesta se ve escrita en otra serie, 0 = no sale
-function sale(c) {
+// Prueba de verdad que el examen sale con el texto, sin cambiar ninguna serie, y que cabe en H hojas
+// (con oraciones largas tres series de 5 no caben en una hoja; armarlo y medirlo tarda unos 10 ms).
+// 3 = sale limpio y cabe, 2 = cabe pero una respuesta se ve escrita en otra serie,
+// 1 = sale pero no cabe, 0 = no sale
+function sale(c, H) {
   const texto = $('texto').value.trim();
-  if (texto.length < 200) return 2;
+  if (texto.length < 200) return 3;
   try {
     const p = parcialBasico(datos(), texto, c.S.map((t, i) => ({ tipo: t, puntos: c.valores[i] })));
-    return p.cambios.length ? 0 : cruces(p.series).length ? 1 : 2;
+    if (p.cambios.length) return 0;
+    const m = mezclado(p);
+    m.datos.hojas = H || hojas();
+    if (!maquetar(m, false, estado.logo).cabe) return 1;
+    return cruces(p.series).length ? 2 : 3;
   } catch (e) { return 0; }
+}
+
+// Las mismas series con puntos pasados de una a otra (cinco abiertas no caben con otra serie
+// en una hoja, tres si), primero lo que menos cambia
+function otrosRepartos(c) {
+  const out = [];
+  c.S.forEach((a, i) => c.S.forEach((b, j) => {
+    if (i === j) return;
+    for (const v of sirven(a).filter(v => v < c.valores[i])) {
+      const w = c.valores[j] + c.valores[i] - v;
+      if (sirven(b).includes(w)) out.push({ S: c.S, valores: c.valores.map((x, k) => k === i ? v : k === j ? w : x), mueve: c.valores[i] - v, mismas: true });
+    }
+  }));
+  return out.sort((a, b) => a.mueve - b.mueve);
 }
 
 // Acomoda todo despues de lo que hizo el maestro. acc.con o acc.sin = la serie que marco o quito,
@@ -236,40 +275,55 @@ function acomodar(acc) {
   const pedido = auto && estado.pedido ? estado.pedido : { H: antes.H, T: antes.T };
   const comoPidio = pedido.H === antes.H && pedido.T === antes.T;
   // si el maestro no toco las series y lo de ahora ya cuadra y sale con el texto, se respeta tal cual
+  let rAhora = 0;
   if (auto && !acc.quiero && comoPidio) {
     const el = eleccion();
     const ahora = { S: el.map(e => e.tipo), valores: el.map(e => e.puntos) };
-    if (!revisarEleccion(el, antes.T, antes.H).length && sale(ahora)) { estado.avisosPlan = []; estado.avisoCorto = ''; return true; }
+    if (!revisarEleccion(el, antes.T, antes.H, topeSerie()).length) {
+      rAhora = sale(ahora, antes.H);
+      if (rAhora >= 2) { estado.avisosPlan = []; estado.avisoCorto = ''; return true; }
+    }
   }
   const cerca = (lista, v) => lista.filter(x => x !== v).sort((a, b) => Math.abs(a - v) - Math.abs(b - v) || b - a);
   const intentos = comoPidio ? [[antes.H, antes.T]] : [[pedido.H, pedido.T], [antes.H, antes.T]];
   if (acc.que === 'hojas') intentos.push(...cerca(TOTALES, antes.T).map(T => [antes.H, T]));
   else if (acc.que === 'total') intentos.push(...cerca(HOJAS, antes.H).map(H => [H, antes.T]));
   else if (!acc.fijo) intentos.push(...cerca(HOJAS, antes.H).map(H => [H, antes.T]), ...cerca(TOTALES, antes.T).map(T => [antes.H, T]));
+  // de cada mezcla probada se queda la mejor: limpia y que cabe, luego que cabe, luego que solo sale
   let elegido = null, respaldo = null, probados = 0;
+  const probar = (H, T, c) => {
+    const r = sale(c, H);
+    if (r === 3) elegido = { H, T, c, r };
+    else if (r && r > (respaldo ? respaldo.r : 0)) respaldo = { H, T, c, r };
+  };
   for (const [H, T] of intentos) {
     let aqui = 0;
     for (const c of candidatos(H, T, quiero, acc)) {
-      if (aqui++ >= 12 || probados++ >= 60) break;
-      const r = sale(c);
-      if (r === 2) { elegido = { H, T, c }; break; }
-      if (r === 1 && !respaldo) respaldo = { H, T, c };
+      if (aqui++ >= 30 || probados++ >= 90) break;
+      probar(H, T, c);
+      if (elegido) break;
     }
-    // con estas hojas y este punteo, mejor uno donde ninguna respuesta se vea en otra serie
+    // nada cupo, las mejores mezclas con los puntos pasados de una serie a otra
+    if (!elegido && respaldo && respaldo.r < 2) {
+      const base = respaldo;
+      for (const c of otrosRepartos(base.c).slice(0, 16)) { probar(base.H, base.T, c); if (elegido) break; }
+    }
+    // con estas hojas y este punteo, lo mejor que hubo aunque no quepa (al crear se busca otra vez)
     if (!elegido && respaldo) elegido = respaldo;
-    if (elegido || probados >= 60) break;
+    if (elegido || probados >= 90) break;
   }
+  // nada nuevo cabe y lo que el maestro tenia si sale, se deja como estaba
+  if (elegido && elegido.r < 2 && rAhora) { estado.avisosPlan = []; estado.avisoCorto = ''; return true; }
   // el texto no alcanza para lo que se pidio: el examen mas grande que si sale, antes que nada
   let corto = false;
   if (!elegido && auto && estado.capaz) {
     probados = 0;
     const menos = TOTALES.filter(T => T < pedido.T).reverse().flatMap(T => HOJAS.map(H => [H, T]));
     for (const [H, T] of menos) {
-      for (const c of candidatos(H, T, quiero, acc).slice(0, 6)) {
+      for (const c of candidatos(H, T, quiero, acc).slice(0, 8)) {
         if (probados++ >= 150) break;
-        const r = sale(c);
-        if (r === 2) { elegido = { H, T, c }; break; }
-        if (r === 1 && !respaldo) respaldo = { H, T, c };
+        probar(H, T, c);
+        if (elegido) break;
       }
       if (!elegido && respaldo) elegido = respaldo;
       if (elegido || probados >= 150) break;
@@ -334,6 +388,7 @@ function mover(caja, paso) {
     const s = v > 1 ? 's' : '';
     estado.avisosPlan = [campo === 'hojas'
       ? (paso > 0 ? `Con este texto y este punteo lo más son ${v} hoja${s}.` : `Con este punteo lo menos son ${v} hoja${s}.`)
+      : paso > 0 && topeSerie() ? `Con este texto y series de ${topeSerie()} puntos o menos, el punteo no puede subir más.`
       : `Con este texto el punteo no puede ${paso > 0 ? 'subir' : 'bajar'} más.`];
     return;
   }
@@ -378,10 +433,14 @@ function revisar() {
       : `${pl.n} ${t === 'ordenar' ? 'pasos' : t === 'clasificar' ? 'elementos' : 'preguntas'} de ${pts(pl.valor)}`;
   }
   const el = eleccion(), suma = el.reduce((a, e) => a + e.puntos, 0);
-  const malos = revisarEleccion(el, total(), hojas());
+  const malos = revisarEleccion(el, total(), hojas(), topeSerie());
   const H = hojas();
-  $('suma').textContent = malos.length ? malos.join(' ') : `Listo, ${el.length} series en ${H} hoja${H > 1 ? 's' : ''} que suman ${suma} puntos.`;
-  $('suma').className = 'suma ' + (malos.length ? 'mal' : 'bien');
+  // series marcadas que no salen con el texto pegado, no se dice Listo aunque los puntos cuadren
+  const flojas = estado.capaz ? el.filter(e => !sirven(e.tipo).includes(e.puntos)) : [];
+  $('suma').textContent = malos.length ? malos.join(' ')
+    : flojas.length ? `Con este texto no sale ${flojas.map(e => nombre(e.tipo)).join(' ni ')}. Pegue más contenido de sus clases.`
+    : `Listo, ${el.length} series en ${H} hoja${H > 1 ? 's' : ''} que suman ${suma} puntos.`;
+  $('suma').className = 'suma ' + (malos.length || flojas.length ? 'mal' : 'bien');
   $('cambios').innerHTML = (estado.avisosPlan || []).map(a => `<li>${esc(a)}</li>`).join('');
   const n = $('texto').value.trim().length;
   $('cuenta').textContent = n ? `${n.toLocaleString('es')} letras` : '';
@@ -483,33 +542,34 @@ async function crear() {
     if (!estado.mx.cabe) {
       const quiero = new Set(eleccion().map(e => e.tipo)), H = hojas(), T = total();
       // primero las mezclas donde ninguna respuesta se ve en otra serie
-      const limpias = l => l.map(c => ({ c, r: sale(c) })).filter(x => x.r).sort((a, b) => b.r - a.r).map(x => x.c);
-      // antes que cambiar series, las mismas con los puntos pasados de una a otra (cinco abiertas
-      // no caben con otra serie en una hoja, tres si), primero lo que menos cambia
-      const el = eleccion(), mismas = [];
-      el.forEach((a, i) => el.forEach((b, j) => {
-        if (i === j) return;
-        for (const v of sirven(a.tipo).filter(v => v < a.puntos)) {
-          const w = b.puntos + a.puntos - v;
-          if (sirven(b.tipo).includes(w)) mismas.push({ S: el.map(e => e.tipo), valores: el.map((e, k) => k === i ? v : k === j ? w : e.puntos), mueve: a.puntos - v, mismas: true });
-        }
-      }));
-      mismas.sort((a, b) => a.mueve - b.mueve);
-      const otras = [...limpias(mismas.slice(0, 16)).slice(0, 8), ...limpias(candidatos(H, T, quiero).slice(0, 12)).slice(0, 8)];
-      for (const H2 of [H + 1, H + 2].filter(x => x <= 4)) otras.push(...limpias(candidatos(H2, T, quiero).slice(0, 8).map(c => ({ ...c, H: H2 }))).slice(0, 3));
-      for (const c of otras) {
-        const antes = { H: hojas(), el: eleccion() };
+      const limpias = l => l.map(c => ({ c, r: sale(c, c.H || H) })).filter(x => x.r >= 2).sort((a, b) => b.r - a.r).map(x => x.c);
+      const el = eleccion(), mismas = otrosRepartos({ S: el.map(e => e.tipo), valores: el.map(e => e.puntos) });
+      // cada grupo se arma solo si el anterior no cupo
+      const grupos = [() => limpias(mismas.slice(0, 16)).slice(0, 8), () => limpias(candidatos(H, T, quiero).slice(0, 12)).slice(0, 8)];
+      for (const H2 of [H + 1, H + 2].filter(x => x <= 4)) grupos.push(() => limpias(candidatos(H2, T, quiero).slice(0, 8).map(c => ({ ...c, H: H2 }))).slice(0, 3));
+      // con un texto corto o series de 10 o menos a veces no hay forma, entonces un examen un poco mas chico que si cabe
+      for (const T2 of TOTALES.filter(x => x < T).reverse().slice(0, 3)) for (const H2 of [H, H + 1].filter(x => x <= 4))
+        grupos.push(() => limpias(candidatos(H2, T2, quiero).slice(0, 6).map(c => ({ ...c, H: H2, T: T2 }))).slice(0, 2));
+      const corto = estado.avisoCorto;
+      fuera: for (const grupo of grupos) for (const c of grupo()) {
+        const antes = { H: hojas(), T: total(), el: eleccion() };
         $('hojas').textContent = c.H || H;
+        $('total').textContent = c.T || T;
         for (const t of ORDEN) { const i = c.S.indexOf(t); $('s-' + t).checked = i >= 0; if (i >= 0) $('p-' + t).textContent = c.valores[i]; }
         estado.parcial = parcialBasico(datos(), texto, eleccion());
+        if (c.T) estado.avisoCorto = '';
         mostrar();
         if (estado.mx.cabe) {
           const en = `No cabía en ${H} hoja${H > 1 ? 's' : ''}`;
-          estado.avisosPlan = [c.H ? `${en}, se pasó a ${c.H}.` : c.mismas ? `${en}, se repartieron otra vez los puntos entre las series para que quepa.` : `${en}, se cambiaron las series para que quepa.`];
+          const h2 = c.H === 1 ? '1 hoja' : `${c.H} hojas`;
+          estado.avisosPlan = [c.T ? `${en}, quedó de ${c.T} puntos en ${h2}. Si quiere más, pegue más contenido de sus clases.`
+            : c.H ? `${en}, se pasó a ${c.H}.` : c.mismas ? `${en}, se repartieron otra vez los puntos entre las series para que quepa.` : `${en}, se cambiaron las series para que quepa.`];
           $('avisos').insertAdjacentHTML('afterbegin', `<li>${esc(estado.avisosPlan[0])}</li>`);
-          break;
+          break fuera;
         }
+        estado.avisoCorto = corto;
         $('hojas').textContent = antes.H;
+        $('total').textContent = antes.T;
         for (const t of ORDEN) { const e = antes.el.find(x => x.tipo === t); $('s-' + t).checked = !!e; if (e) $('p-' + t).textContent = e.puntos; }
       }
       if (!estado.mx.cabe) { estado.parcial = parcialBasico(datos(), texto, eleccion()); mostrar(); }

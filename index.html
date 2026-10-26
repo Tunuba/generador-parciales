@@ -40,19 +40,22 @@
 
   <section class="paso" id="paso-texto">
     <h2><span>2</span> Contenido de las clases</h2>
-    <p class="ayuda">Pegue el texto de sus presentaciones o súbalas. Sirve mejor si los conceptos van en lista, uno por renglón, así
+    <p class="ayuda">Pegue el texto de sus presentaciones, súbalas o díctelo con la voz. Sirve mejor si los conceptos van en lista, uno por renglón, así
       <em>Evaporación. El calor del Sol convierte el agua en vapor.</em> Los pasos de un procedimiento van numerados.</p>
     <textarea id="texto" rows="12" placeholder="Pegue aquí el contenido de sus clases"></textarea>
     <div class="fila">
+      <button class="secundario" id="dictar" type="button" aria-pressed="false">Dictar con la voz</button>
       <label class="boton secundario">Subir archivos <input id="archivos" type="file" multiple accept=".txt,.md,.docx,.pptx,.pdf" hidden></label>
       <button class="secundario" id="ejemplo" type="button">Probar con un ejemplo</button>
       <button class="secundario" id="borrar-texto" type="button">Borrar</button>
       <span class="cuenta" id="cuenta"></span>
     </div>
+    <p id="oyendo" class="oyendo" aria-live="polite" hidden></p>
   </section>
 
   <section class="paso" id="paso-series">
     <h2><span>3</span> Series</h2>
+    <label class="tope"><input type="checkbox" id="tope" checked> Cada serie vale 10 puntos o menos</label>
     <p class="ayuda">Toque las series que quiere o las que quiere quitar. Los puntos, las series y las hojas se acomodan solos para que todo cuadre.</p>
     <div id="series" class="series"></div>
     <p class="suma" id="suma"></p>
@@ -98,6 +101,7 @@
 <script src="word.js"></script>
 <script src="archivos.js"></script>
 <script src="ejemplo.js"></script>
+<script src="voz.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
