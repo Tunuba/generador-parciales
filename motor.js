@@ -42,8 +42,8 @@ function plan(tipo, puntos) {
   return null;
 }
 
-// tope = lo mas que puede valer una serie (en el colegio, 10)
-function revisarEleccion(eleccion, total, hojas, tope) {
+// tope = lo mas que puede valer una serie (en el colegio, 10, siempre)
+function revisarEleccion(eleccion, total, hojas, tope = 10) {
   const malos = [];
   const tipos = eleccion.map(e => e.tipo);
   const suma = eleccion.reduce((a, e) => a + e.puntos, 0);

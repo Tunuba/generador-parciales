@@ -152,7 +152,3 @@ button:hover, .boton:hover { border-color: var(--azul-2); }
 .dictando { background: var(--malo); color: #fff; border-color: transparent; font-weight: 600; }
 .oyendo { margin: 10px 0 0; padding: 8px 12px; border-radius: 8px; background: var(--fondo); color: var(--suave); font-size: 14px; }
 .oyendo.mal { color: var(--malo); }
-
-/* el tope de puntos de cada serie */
-.tope { display: flex; align-items: center; gap: 10px; margin: 0 0 10px; font-weight: 600; cursor: pointer; }
-.tope input { width: 20px; height: 20px; flex: none; }

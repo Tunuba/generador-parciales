@@ -6,19 +6,17 @@ const CLAVE = 'generador-parciales.v2';
 const CAMPOS = ['colegio', 'materia', 'materia-otra', 'grado', 'tipo-examen', 'bloque', 'profesor', 'hoja'];
 const CICLO = '2027';
 const TOTALES = [10, 15, 20, 25, 30, 35, 40, 50, 60, 100];
-// Lo que se marca al abrir, segun cuantas hojas lleva
-const INICIALES = { 1: ['ordenar', 'parear'], 2: ['ordenar', 'dibujo', 'abiertas', 'seleccion', 'parear'] };
-// con series de 10 o menos, mas series de menos puntos (parcial 3 de 5, final 6 de 5)
-const INICIALES_TOPE = { 1: ['ordenar', 'seleccion', 'parear'], 2: ['ordenar', 'dibujo', 'abiertas', 'vf', 'seleccion', 'parear'] };
-const iniciales = n => new Set((topeSerie() ? INICIALES_TOPE : INICIALES)[n]);
+// Lo que se marca al abrir, segun cuantas hojas lleva; como ninguna serie pasa de 10 van
+// mas series de menos puntos (parcial 3 de 5, final 6 de 5)
+const INICIALES = { 1: ['ordenar', 'seleccion', 'parear'], 2: ['ordenar', 'dibujo', 'abiertas', 'vf', 'seleccion', 'parear'] };
+const iniciales = n => new Set(INICIALES[n]);
 // Cuanto pesa cada serie al repartir los puntos
 // (abiertas pesa mas porque sus renglones se acomodan al espacio; ordenar y dibujo tienen tope
 // porque casi ninguna clase trae mas de 5 pasos o mas de 4 partes para senalar)
 const PESO = { seleccion: 0.9, abiertas: 1.5, vf: 0.9, completar: 1, parear: 1, clasificar: 1, ordenar: 0.8, dibujo: 0.9 };
 const TOPE = { ordenar: 5, dibujo: 6 };
-// En el colegio ninguna serie pasa de 10 puntos; con eso marcado se reparten cerca de 5 cada una
+// En el colegio ninguna serie pasa de 10 puntos, nunca; se reparten cerca de 5 cada una
 const TOPE_SERIE = 10;
-const topeSerie = () => $('tope').checked ? TOPE_SERIE : 0;
 const LOGO_SABER = 'logo-saber.jpg';
 
 const estado = { logo: null, parcial: null, m: null, mres: null, vista: 'examen', capaz: null, quitadas: new Set(), fijadas: {}, avisosPlan: [] };
@@ -27,7 +25,7 @@ function leerGuardado() {
   try { return JSON.parse(localStorage.getItem(CLAVE)) || {}; } catch (e) { return {}; }
 }
 function guardar() {
-  const g = { campos: {}, series: {}, hojas: hojas(), total: total(), pedido: estado.pedido, tope: $('tope').checked };
+  const g = { campos: {}, series: {}, hojas: hojas(), total: total(), pedido: estado.pedido };
   for (const c of CAMPOS) g.campos[c] = $(c).value;
   for (const t of ORDEN) g.series[t] = { marcada: $('s-' + t).checked, puntos: puntosDe(t) };
   g.texto = $('texto').value.length < 200000 ? $('texto').value : '';
@@ -47,7 +45,7 @@ const datos = () => ({
 });
 const eleccion = () => ORDEN.filter(t => $('s-' + t).checked).map(t => ({ tipo: t, puntos: puntosDe(t) }));
 // Los puntos con los que cada serie se puede armar
-const valores = t => Array.from({ length: topeSerie() || 60 }, (_, i) => i + 1).filter(p => plan(t, p));
+const valores = t => Array.from({ length: TOPE_SERIE }, (_, i) => i + 1).filter(p => plan(t, p));
 // Los que ademas salen con el texto pegado (sin texto, todos)
 const sirven = t => valores(t).filter(p => !estado.capaz || estado.capaz[t].has(plan(t, p).n));
 const nombre = t => SERIES[t].nombre;
@@ -78,7 +76,6 @@ function iniciar() {
 
   const campos = g.campos || {};
   for (const c of CAMPOS) if (campos[c]) $(c).value = campos[c];
-  if (g.tope === false) $('tope').checked = false;
   // un guardado viejo con otro colegio deja el selector vacio, vuelve a El Saber No.1
   if (!$('colegio').value) $('colegio').selectedIndex = 0;
   $('hojas').textContent = g.hojas || 1;
@@ -87,7 +84,8 @@ function iniciar() {
   estado.pedido = g.pedido || { H: hojas(), T: total() };
   if (g.series) for (const t of ORDEN) {
     $('s-' + t).checked = !!g.series[t].marcada;
-    $('p-' + t).textContent = g.series[t].puntos || valores(t)[0];
+    // un guardado de antes puede traer una serie de mas de 10 puntos, esa vuelve al primer valor
+    $('p-' + t).textContent = valores(t).includes(g.series[t].puntos) ? g.series[t].puntos : valores(t)[0];
   } else for (const t of ORDEN) $('s-' + t).checked = iniciales(1).has(t);
   if (g.texto) $('texto').value = g.texto;
   ponerLogo();
@@ -107,13 +105,6 @@ function iniciar() {
       estado.pedido = { H: hojas(), T: total() };
       estado.quitadas.clear(); estado.fijadas = {};
       acomodar({ quiero: iniciales(parcial ? 1 : 2) });
-    }
-    if (e.target.id === 'tope') {                   // los puntos de cada serie se reparten otra vez
-      estado.fijadas = {};
-      medirTexto();
-      // con tope se buscan mas series de menos puntos, sin quitar las que el maestro ya tenia
-      const quiero = new Set([...eleccion().map(x => x.tipo), ...(e.target.checked ? iniciales(Math.min(2, hojas())) : [])]);
-      acomodar({ que: 'tope', quiero });
     }
     if (e.target.type === 'checkbox' && e.target.id.startsWith('s-')) {
       const t = e.target.id.slice(2);
@@ -206,10 +197,8 @@ function repartirEn(tipos, T, fijo) {
 // Todas las formas de armar el examen con H hojas y T puntos, la mas parecida a lo marcado primero
 function candidatos(H, T, quiero, { con, sin, fijo } = {}, primero) {
   const disp = ORDEN.filter(t => t !== sin && sirven(t).length);
-  // cuantas series quedan bien; con tope, cerca de 5 puntos cada una (30 puntos en 6 series, 15 en 3)
-  const tope = topeSerie();
-  const ideal = !tope ? (H === 1 ? 2 : Math.min(7, Math.round(2.5 * H)))
-    : Math.min(7, Math.max(2 * H, Math.ceil(T / tope), Math.round(T / 5)));
+  // cuantas series quedan bien, cerca de 5 puntos cada una (30 puntos en 6 series, 15 en 3)
+  const ideal = Math.min(7, Math.max(2 * H, Math.ceil(T / TOPE_SERIE), Math.round(T / 5)));
   const out = [];
   for (let mask = 1; mask < 1 << disp.length; mask++) {
     const S = disp.filter((_, i) => mask >> i & 1);
@@ -218,8 +207,8 @@ function candidatos(H, T, quiero, { con, sin, fijo } = {}, primero) {
     const r = repartirEn(S, T, fijo);
     if (!r) continue;
     if (primero) return [{ S, valores: r.valores }];
-    // con tope pesa mas tener las series que tocan, para que queden de unos 5 puntos
-    let costo = r.costo + (tope ? 30 : 10) * Math.abs(S.length - ideal);
+    // pesa mas tener las series que tocan, para que queden de unos 5 puntos
+    let costo = r.costo + 30 * Math.abs(S.length - ideal);
     for (const t of ORDEN) {
       if (quiero.has(t) && !S.includes(t)) costo += 30;
       if (!quiero.has(t) && S.includes(t)) costo += estado.quitadas.has(t) ? 60 : 12;
@@ -279,7 +268,7 @@ function acomodar(acc) {
   if (auto && !acc.quiero && comoPidio) {
     const el = eleccion();
     const ahora = { S: el.map(e => e.tipo), valores: el.map(e => e.puntos) };
-    if (!revisarEleccion(el, antes.T, antes.H, topeSerie()).length) {
+    if (!revisarEleccion(el, antes.T, antes.H, TOPE_SERIE).length) {
       rAhora = sale(ahora, antes.H);
       if (rAhora >= 2) { estado.avisosPlan = []; estado.avisoCorto = ''; return true; }
     }
@@ -388,8 +377,8 @@ function mover(caja, paso) {
     const s = v > 1 ? 's' : '';
     estado.avisosPlan = [campo === 'hojas'
       ? (paso > 0 ? `Con este texto y este punteo lo más son ${v} hoja${s}.` : `Con este punteo lo menos son ${v} hoja${s}.`)
-      : paso > 0 && topeSerie() ? `Con este texto y series de ${topeSerie()} puntos o menos, el punteo no puede subir más.`
-      : `Con este texto el punteo no puede ${paso > 0 ? 'subir' : 'bajar'} más.`];
+      : paso > 0 ? `Con este texto y series de ${TOPE_SERIE} puntos o menos, el punteo no puede subir más.`
+      : 'Con este texto el punteo no puede bajar más.'];
     return;
   }
   out.textContent = sig;
@@ -433,7 +422,7 @@ function revisar() {
       : `${pl.n} ${t === 'ordenar' ? 'pasos' : t === 'clasificar' ? 'elementos' : 'preguntas'} de ${pts(pl.valor)}`;
   }
   const el = eleccion(), suma = el.reduce((a, e) => a + e.puntos, 0);
-  const malos = revisarEleccion(el, total(), hojas(), topeSerie());
+  const malos = revisarEleccion(el, total(), hojas(), TOPE_SERIE);
   const H = hojas();
   // series marcadas que no salen con el texto pegado, no se dice Listo aunque los puntos cuadren
   const flojas = estado.capaz ? el.filter(e => !sirven(e.tipo).includes(e.puntos)) : [];
