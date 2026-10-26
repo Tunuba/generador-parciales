@@ -507,7 +507,7 @@ function instruccion(x) {
     case 'abiertas': return `Responda las siguientes preguntas. Cada respuesta vale ${pts(v)}.`;
     case 'completar': return `Complete cada oración con la palabra correcta del recuadro. Sobran dos palabras. Cada respuesta vale ${pts(v)}.`;
     case 'parear': return `Escriba dentro del paréntesis la letra del concepto que corresponde a cada definición. Sobran dos conceptos. Cada respuesta vale ${pts(v)}.`;
-    case 'ordenar': return `${x.proceso.replace(/\.$/, '')}. Numere del 1 al ${x.pasos.length} los pasos en el orden correcto. Cada número vale ${pts(v)}.`;
+    case 'ordenar': return `${x.proceso.replace(/\.$/, '')}. Numere del 1 al ${x.pasos.length} ${/^hechos/i.test(x.proceso) ? 'los hechos en el orden en que pasaron' : 'los pasos en el orden correcto'}. Cada número vale ${pts(v)}.`;
     case 'clasificar': return `Escriba cada elemento del recuadro en la categoría correcta. Cada elemento vale ${pts(v)}.`;
     case 'dibujo': return `Dibuje ${x.dibujar.charAt(0).toLowerCase() + x.dibujar.slice(1)} (2 puntos) y señale con flechas estas partes, ${x.partes.join(', ')} (${pts(v)} cada una).`;
   }
@@ -528,8 +528,9 @@ function encabezadoBloques(d, total, res, logo) {
 // aire = puntos de espacio libre que esta serie debe llenar (renglones o separacion)
 function serieBloques(et, x, res, aire, inicio) {
   const b = [], v = x.valor;
-  // el recuadro de dibujo puede achicarse hasta 5 renglones, lo demas no baja de lo normal
-  aire = Math.max(x.tipo === 'dibujo' ? -3 * LP : 0, aire || 0);
+  // el recuadro de dibujo puede achicarse hasta 5 renglones y las abiertas de 3 a 2 renglones por pregunta
+  // (solo si no cabe de otra forma), lo demas no baja de lo normal
+  aire = Math.max(x.tipo === 'dibujo' ? -3 * LP : x.tipo === 'abiertas' && !res ? -x.preguntas.length * LP : 0, aire || 0);
   if (!inicio) b.push(P());
   b.push(P([R(`${et} Serie (${dos(x.puntos)} puntos)`, { b: 1 })]));
   b.push(P('Instrucciones: ' + instruccion(x)));

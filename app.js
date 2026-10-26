@@ -21,7 +21,7 @@ function leerGuardado() {
   try { return JSON.parse(localStorage.getItem(CLAVE)) || {}; } catch (e) { return {}; }
 }
 function guardar() {
-  const g = { campos: {}, series: {}, hojas: hojas(), total: total() };
+  const g = { campos: {}, series: {}, hojas: hojas(), total: total(), pedido: estado.pedido };
   for (const c of CAMPOS) g.campos[c] = $(c).value;
   for (const t of ORDEN) g.series[t] = { marcada: $('s-' + t).checked, puntos: puntosDe(t) };
   g.texto = $('texto').value.length < 200000 ? $('texto').value : '';
@@ -76,6 +76,8 @@ function iniciar() {
   if (!$('colegio').value) $('colegio').selectedIndex = 0;
   $('hojas').textContent = g.hojas || 1;
   $('total').textContent = g.total || 15;
+  // lo que pidio se guarda aparte, el punteo de la pantalla puede ser el que alcanzo con el texto
+  estado.pedido = g.pedido || { H: hojas(), T: total() };
   if (g.series) for (const t of ORDEN) {
     $('s-' + t).checked = !!g.series[t].marcada;
     $('p-' + t).textContent = g.series[t].puntos || valores(t)[0];
@@ -95,6 +97,7 @@ function iniciar() {
       const parcial = /parcial/i.test(e.target.value);
       $('hojas').textContent = parcial ? 1 : 2;
       $('total').textContent = parcial ? 15 : 30;
+      estado.pedido = { H: hojas(), T: total() };
       estado.quitadas.clear(); estado.fijadas = {};
       acomodar({ quiero: new Set(INICIALES[parcial ? 1 : 2]) });
     }
@@ -227,14 +230,19 @@ function acomodar(acc) {
   const quiero = acc.quiero || new Set(antes.marcadas);
   if (acc.con) quiero.add(acc.con);
   if (acc.sin) quiero.delete(acc.sin);
+  // las hojas y el punteo que pidio el maestro; si antes se bajaron porque el texto no alcanzaba,
+  // con un texto nuevo se vuelve a probar lo que pidio
+  const auto = !acc.con && !acc.sin && !acc.fijo && !acc.que;
+  const pedido = auto && estado.pedido ? estado.pedido : { H: antes.H, T: antes.T };
+  const comoPidio = pedido.H === antes.H && pedido.T === antes.T;
   // si el maestro no toco las series y lo de ahora ya cuadra y sale con el texto, se respeta tal cual
-  if (!acc.quiero && !acc.con && !acc.sin && !acc.fijo && !acc.que) {
+  if (auto && !acc.quiero && comoPidio) {
     const el = eleccion();
     const ahora = { S: el.map(e => e.tipo), valores: el.map(e => e.puntos) };
-    if (!revisarEleccion(el, antes.T, antes.H).length && sale(ahora)) { estado.avisosPlan = []; return true; }
+    if (!revisarEleccion(el, antes.T, antes.H).length && sale(ahora)) { estado.avisosPlan = []; estado.avisoCorto = ''; return true; }
   }
   const cerca = (lista, v) => lista.filter(x => x !== v).sort((a, b) => Math.abs(a - v) - Math.abs(b - v) || b - a);
-  const intentos = [[antes.H, antes.T]];
+  const intentos = comoPidio ? [[antes.H, antes.T]] : [[pedido.H, pedido.T], [antes.H, antes.T]];
   if (acc.que === 'hojas') intentos.push(...cerca(TOTALES, antes.T).map(T => [antes.H, T]));
   else if (acc.que === 'total') intentos.push(...cerca(HOJAS, antes.H).map(H => [H, antes.T]));
   else if (!acc.fijo) intentos.push(...cerca(HOJAS, antes.H).map(H => [H, antes.T]), ...cerca(TOTALES, antes.T).map(T => [antes.H, T]));
@@ -250,6 +258,23 @@ function acomodar(acc) {
     // con estas hojas y este punteo, mejor uno donde ninguna respuesta se vea en otra serie
     if (!elegido && respaldo) elegido = respaldo;
     if (elegido || probados >= 60) break;
+  }
+  // el texto no alcanza para lo que se pidio: el examen mas grande que si sale, antes que nada
+  let corto = false;
+  if (!elegido && auto && estado.capaz) {
+    probados = 0;
+    const menos = TOTALES.filter(T => T < pedido.T).reverse().flatMap(T => HOJAS.map(H => [H, T]));
+    for (const [H, T] of menos) {
+      for (const c of candidatos(H, T, quiero, acc).slice(0, 6)) {
+        if (probados++ >= 150) break;
+        const r = sale(c);
+        if (r === 2) { elegido = { H, T, c }; break; }
+        if (r === 1 && !respaldo) respaldo = { H, T, c };
+      }
+      if (!elegido && respaldo) elegido = respaldo;
+      if (elegido || probados >= 150) break;
+    }
+    corto = !!elegido;
   }
   const avisos = [];
   if (!elegido) {
@@ -274,7 +299,10 @@ function acomodar(acc) {
   // lo que se movio solo, en una linea cada cosa
   const las = n => n === 1 ? 'la hoja' : `las ${n} hojas`;
   if (H !== antes.H) avisos.push(`Con ${T} puntos el examen va en ${H} hoja${H > 1 ? 's' : ''}.`);
-  if (T !== antes.T) avisos.push(`Para ${H} hoja${H > 1 ? 's' : ''} el punteo pasa a ${T}.`);
+  // lo que no alcanzo se dice tambien junto al examen, que es donde el maestro esta mirando
+  estado.avisoCorto = corto ? `Con este texto alcanzó para ${T} puntos. Si quiere ${pedido.T}, pegue más contenido de sus clases.` : '';
+  if (corto) avisos.push(estado.avisoCorto);
+  else if (T !== antes.T) avisos.push(`Para ${H} hoja${H > 1 ? 's' : ''} el punteo pasa a ${T}.`);
   const quitadas = [...antes.marcadas].filter(t => !c.S.includes(t) && t !== acc.sin);
   if (!acc.quiero) for (const t of quitadas) {
     const otra = t === 'completar' ? 'parear' : t === 'parear' ? 'completar' : null;
@@ -311,6 +339,7 @@ function mover(caja, paso) {
   }
   out.textContent = sig;
   if (!acomodar({ que: campo })) out.textContent = v;
+  estado.pedido = { H: hojas(), T: total() };
 }
 
 function siguientePunto(t, paso) {
@@ -413,6 +442,7 @@ function ponerEjemplo() {
   for (const [k, v] of Object.entries(EJEMPLO.datos)) $(k).value = v;
   $('hojas').textContent = 2;
   $('total').textContent = 30;
+  estado.pedido = { H: 2, T: 30 };
   for (const t of ORDEN) {
     $('s-' + t).checked = t in EJEMPLO.series;
     if (t in EJEMPLO.series) $('p-' + t).textContent = EJEMPLO.series[t];
@@ -437,7 +467,8 @@ async function crear() {
   $('mensajes').innerHTML = '';
   const d = datos(), texto = $('texto').value.trim();
   if (!d.materia) { aviso('Escriba cuál es la materia.', true); return; }
-  if (texto.length < 200) { aviso('Falta el contenido de las clases (paso 2).', true); return; }
+  if (!texto) { aviso('Falta el contenido de las clases. Péguelo en el paso 2.', true); return; }
+  if (texto.length < 200) { aviso('El texto es muy corto. Pegue por lo menos un párrafo completo de su clase.', true); return; }
   // por si pego texto hace un momento, se mide y se acomoda ya
   clearTimeout(estado.espera);
   medirTexto(); acomodar({});
@@ -453,7 +484,18 @@ async function crear() {
       const quiero = new Set(eleccion().map(e => e.tipo)), H = hojas(), T = total();
       // primero las mezclas donde ninguna respuesta se ve en otra serie
       const limpias = l => l.map(c => ({ c, r: sale(c) })).filter(x => x.r).sort((a, b) => b.r - a.r).map(x => x.c);
-      const otras = limpias(candidatos(H, T, quiero).slice(0, 12)).slice(0, 8);
+      // antes que cambiar series, las mismas con los puntos pasados de una a otra (cinco abiertas
+      // no caben con otra serie en una hoja, tres si), primero lo que menos cambia
+      const el = eleccion(), mismas = [];
+      el.forEach((a, i) => el.forEach((b, j) => {
+        if (i === j) return;
+        for (const v of sirven(a.tipo).filter(v => v < a.puntos)) {
+          const w = b.puntos + a.puntos - v;
+          if (sirven(b.tipo).includes(w)) mismas.push({ S: el.map(e => e.tipo), valores: el.map((e, k) => k === i ? v : k === j ? w : e.puntos), mueve: a.puntos - v, mismas: true });
+        }
+      }));
+      mismas.sort((a, b) => a.mueve - b.mueve);
+      const otras = [...limpias(mismas.slice(0, 16)).slice(0, 8), ...limpias(candidatos(H, T, quiero).slice(0, 12)).slice(0, 8)];
       for (const H2 of [H + 1, H + 2].filter(x => x <= 4)) otras.push(...limpias(candidatos(H2, T, quiero).slice(0, 8).map(c => ({ ...c, H: H2 }))).slice(0, 3));
       for (const c of otras) {
         const antes = { H: hojas(), el: eleccion() };
@@ -462,7 +504,8 @@ async function crear() {
         estado.parcial = parcialBasico(datos(), texto, eleccion());
         mostrar();
         if (estado.mx.cabe) {
-          estado.avisosPlan = [c.H ? `No cabía en ${H} hoja${H > 1 ? 's' : ''}, se pasó a ${c.H}.` : `No cabía en ${H} hoja${H > 1 ? 's' : ''}, se cambiaron las series para que quepa.`];
+          const en = `No cabía en ${H} hoja${H > 1 ? 's' : ''}`;
+          estado.avisosPlan = [c.H ? `${en}, se pasó a ${c.H}.` : c.mismas ? `${en}, se repartieron otra vez los puntos entre las series para que quepa.` : `${en}, se cambiaron las series para que quepa.`];
           $('avisos').insertAdjacentHTML('afterbegin', `<li>${esc(estado.avisosPlan[0])}</li>`);
           break;
         }
@@ -476,7 +519,9 @@ async function crear() {
     $('resultado').scrollIntoView({ behavior: 'smooth' });
   } catch (err) {
     $('resultado').hidden = true;                 // que no quede a la vista un examen viejo
-    aviso(err.message, true);
+    // lo de adentro (que serie fallo y por que) no le sirve al maestro, solo que hacer
+    aviso(err.fallas ? 'Con este texto no alcanzan las preguntas. Pegue más contenido de sus clases y toque otra vez Crear examen.' : err.message, true);
+    console.warn(err.message);
   } finally {
     $('crear').disabled = false;
   }
@@ -488,7 +533,7 @@ function mostrar() {
   estado.m.datos.hojas = estado.m.datos.hojas || Math.max(1, Math.floor(p.series.length / 2));
   estado.mx = maquetar(estado.m, false, estado.logo);
   estado.mres = maquetar(estado.m, true, estado.logo, estado.mx.hojas);
-  const avisos = [...(p.cambios || []), ...cruces(estado.m.series)];
+  const avisos = [...(estado.avisoCorto ? [estado.avisoCorto] : []), ...(p.cambios || []), ...cruces(estado.m.series)];
   const h = estado.m.datos.hojas;
   if (!estado.mx.cabe) avisos.unshift(`El examen no cabe bien en ${h} hoja${h > 1 ? 's' : ''}. Bájele puntos a la serie más larga o súbale una hoja.`);
   if (!p.temario.puntos.length) avisos.push('No salió el temario.');

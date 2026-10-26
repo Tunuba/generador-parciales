@@ -98,7 +98,7 @@ function maquetar(p, res, logo, fijo) {
       if (vuelta > 0 && libre >= 0 && libre < LP * PX) break;
       const quienes = g.filter(j => llenables.includes(p.series[j].tipo));
       const a = quienes.length ? quienes : g;
-      const piso = j => p.series[j].tipo === 'dibujo' ? -3 * LP : 0;
+      const piso = j => p.series[j].tipo === 'dibujo' ? -3 * LP : p.series[j].tipo === 'abiertas' && !res ? -p.series[j].preguntas.length * LP : 0;
       for (const j of a) aire[j] = Math.max(piso(j), aire[j] + libre / PX / a.length - (libre < 0 ? 2 : 0));
       if (libre < 0 && a.every(j => aire[j] === piso(j))) break;
     }
